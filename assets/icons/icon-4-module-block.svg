@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E2A4A"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg4)"/>
+
+  <!-- input port stubs (left) -->
+  <g stroke="#38BDF8" stroke-width="8" stroke-linecap="round">
+    <line x1="40" y1="96"  x2="74" y2="96"/>
+    <line x1="40" y1="128" x2="74" y2="128"/>
+    <line x1="40" y1="160" x2="74" y2="160"/>
+  </g>
+  <!-- output port stubs (right) -->
+  <g stroke="#2DD4BF" stroke-width="8" stroke-linecap="round">
+    <line x1="182" y1="112" x2="216" y2="112"/>
+    <line x1="182" y1="144" x2="216" y2="144"/>
+  </g>
+
+  <!-- module body -->
+  <rect x="74" y="74" width="108" height="108" rx="14"
+        fill="#F1F5F9" stroke="#2DD4BF" stroke-width="4"/>
+
+  <!-- doc lines inside the module -->
+  <g stroke="#1E2A4A" stroke-width="8" stroke-linecap="round">
+    <line x1="92" y1="104" x2="150" y2="104"/>
+    <line x1="92" y1="128" x2="164" y2="128"/>
+    <line x1="92" y1="152" x2="138" y2="152"/>
+  </g>
+
+  <!-- accent corner marker -->
+  <circle cx="166" cy="90" r="7" fill="#FBBF24"/>
+</svg>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#E2E8F0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg3)"/>
+
+  <!-- portrait document page -->
+  <path d="M74 50 H156 L186 80 V206 H74 Z" fill="#FFFFFF"
+        stroke="#1E2A4A" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M156 50 V80 H186" fill="none"
+        stroke="#1E2A4A" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- top: documentation text lines -->
+  <g stroke="#1E2A4A" stroke-width="7" stroke-linecap="round">
+    <line x1="92" y1="98"  x2="150" y2="98"/>
+    <line x1="92" y1="118" x2="168" y2="118"/>
+  </g>
+
+  <!-- divider -->
+  <line x1="92" y1="140" x2="168" y2="140"
+        stroke="#94A3B8" stroke-width="3" stroke-dasharray="6 7" stroke-linecap="round"/>
+
+  <!-- bottom: text "becomes" a digital waveform -->
+  <path d="M92 182 H106 V160 H124 V182 H142 V160 H160 V182 H168"
+        fill="none" stroke="#0EA5A4" stroke-width="8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M92 182 H106 V160 H124 V182 H142 V160 H160 V182"
+        fill="none" stroke="#0EA5A4" stroke-width="8" opacity="0"/>
+
+  <!-- accent dots marking sampled edges -->
+  <g fill="#FBBF24">
+    <circle cx="106" cy="160" r="5"/>
+    <circle cx="142" cy="160" r="5"/>
+  </g>
+</svg>

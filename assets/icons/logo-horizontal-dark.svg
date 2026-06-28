@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 200" width="980" height="200">
+  <defs>
+    <linearGradient id="bgD" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E2A4A"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="waveD" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FBBF24"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="980" height="200" fill="#0B1120"/>
+
+  <g transform="translate(20,20) scale(0.625)">
+    <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bgD)" stroke="#1E293B" stroke-width="2"/>
+    <g fill="#2DD4BF">
+      <rect x="46" y="92" width="14" height="9" rx="2"/>
+      <rect x="46" y="124" width="14" height="9" rx="2"/>
+      <rect x="46" y="156" width="14" height="9" rx="2"/>
+      <rect x="196" y="92" width="14" height="9" rx="2"/>
+      <rect x="196" y="124" width="14" height="9" rx="2"/>
+      <rect x="196" y="156" width="14" height="9" rx="2"/>
+    </g>
+    <g fill="#38BDF8">
+      <rect x="100" y="56" width="9" height="14" rx="2"/>
+      <rect x="132" y="56" width="9" height="14" rx="2"/>
+      <rect x="100" y="186" width="9" height="14" rx="2"/>
+      <rect x="132" y="186" width="9" height="14" rx="2"/>
+    </g>
+    <path d="M66 70 H160 L190 100 V186 H66 Z" fill="#F1F5F9"/>
+    <path d="M160 70 L190 100 H160 Z" fill="#CBD5E1"/>
+    <g stroke="#38BDF8" stroke-width="8" stroke-linecap="round">
+      <line x1="84" y1="108" x2="150" y2="108"/>
+      <line x1="84" y1="128" x2="172" y2="128"/>
+      <line x1="84" y1="148" x2="160" y2="148"/>
+    </g>
+    <path d="M84 170 H98 V162 H114 V170 H130 V162 H150 V170 H172"
+          fill="none" stroke="url(#waveD)" stroke-width="8"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="206" y="122" font-family="'DejaVu Sans', Arial, sans-serif"
+        font-size="62" font-weight="700">
+    <tspan fill="#F1F5F9">sphinx</tspan><tspan fill="#475569">-</tspan><tspan fill="#2DD4BF" font-weight="800">systemverilog</tspan>
+  </text>
+  <text x="208" y="158" font-family="'DejaVu Sans', Arial, sans-serif"
+        font-size="22" font-weight="400" fill="#94A3B8" letter-spacing="1">
+    Sphinx autodoc for SystemVerilog
+  </text>
+</svg>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="currentColor" color="#1E2A4A">
+  <!-- chip pins -->
+  <g>
+    <rect x="46" y="92"  width="14" height="9" rx="2"/>
+    <rect x="46" y="124" width="14" height="9" rx="2"/>
+    <rect x="46" y="156" width="14" height="9" rx="2"/>
+    <rect x="196" y="92"  width="14" height="9" rx="2"/>
+    <rect x="196" y="124" width="14" height="9" rx="2"/>
+    <rect x="196" y="156" width="14" height="9" rx="2"/>
+    <rect x="100" y="56" width="9" height="14" rx="2"/>
+    <rect x="132" y="56" width="9" height="14" rx="2"/>
+    <rect x="100" y="186" width="9" height="14" rx="2"/>
+    <rect x="132" y="186" width="9" height="14" rx="2"/>
+  </g>
+
+  <!-- page outline + fold -->
+  <path d="M66 70 H160 L190 100 V186 H66 Z" fill="none"
+        stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M160 70 V100 H190" fill="none"
+        stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- doc text lines -->
+  <g stroke="currentColor" stroke-width="8" stroke-linecap="round">
+    <line x1="84" y1="108" x2="150" y2="108"/>
+    <line x1="84" y1="128" x2="172" y2="128"/>
+    <line x1="84" y1="148" x2="160" y2="148"/>
+  </g>
+
+  <!-- digital waveform -->
+  <path d="M84 170 H98 V162 H114 V170 H130 V162 H150 V170 H172"
+        fill="none" stroke="currentColor" stroke-width="8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

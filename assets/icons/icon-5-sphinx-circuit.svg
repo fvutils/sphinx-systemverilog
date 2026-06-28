@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#243154"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="pyr5" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#0EA5A4"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg5)"/>
+
+  <!-- pyramid (Sphinx / Giza nod) -->
+  <path d="M128 64 L196 180 H60 Z" fill="url(#pyr5)" opacity="0.9"/>
+  <!-- inner ridge -->
+  <path d="M128 64 L128 180 M128 64 L96 180 M128 64 L160 180"
+        fill="none" stroke="#0F172A" stroke-opacity="0.35" stroke-width="4"/>
+
+  <!-- circuit nodes on the pyramid edges -->
+  <g fill="#FBBF24">
+    <circle cx="128" cy="64" r="9"/>
+    <circle cx="96"  cy="180" r="7"/>
+    <circle cx="160" cy="180" r="7"/>
+    <circle cx="128" cy="122" r="6"/>
+  </g>
+  <!-- traces leading out from apex -->
+  <g stroke="#FBBF24" stroke-width="4" stroke-linecap="round" fill="none">
+    <path d="M128 64 V44 H100"/>
+    <path d="M128 64 V44 H156"/>
+  </g>
+  <circle cx="100" cy="44" r="4" fill="#FBBF24"/>
+  <circle cx="156" cy="44" r="4" fill="#FBBF24"/>
+
+  <!-- ground baseline as a digital waveform -->
+  <path d="M52 200 H72 V190 H92 V200 H112 V190 H132 V200 H152 V190 H172 V200 H204"
+        fill="none" stroke="#2DD4BF" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

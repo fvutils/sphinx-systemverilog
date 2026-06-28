@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://fvutils.github.io/ivpm/ivpm.schema.json
+
+package:
+  name: sphinx-systemverilog
+
+  dep-sets:
+  - name: default-dev
+    deps:
+    - name: sphinx
+      src: pypi
+    - name: pyslang
+      src: pypi
+    - name: pytest
+      src: pypi
+    # Doc toolchain: MyST for Markdown narrative docs.
+    - name: myst-parser
+      src: pypi
+    # Test helper: HTML assertions in sphinx integration tests.
+    - name: beautifulsoup4
+      src: pypi
+    - name: uvm
+      url: https://www.accellera.org/images/downloads/standards/uvm/UVM-1800.2-2020.3.1.tar.gz
+
+  - name: default 
+    deps: []

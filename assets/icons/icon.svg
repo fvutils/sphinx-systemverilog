@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E2A4A"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="wave1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FBBF24"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <!-- app tile -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg1)"/>
+
+  <!-- chip pins around the page -->
+  <g fill="#2DD4BF">
+    <rect x="46" y="92"  width="14" height="9" rx="2"/>
+    <rect x="46" y="124" width="14" height="9" rx="2"/>
+    <rect x="46" y="156" width="14" height="9" rx="2"/>
+    <rect x="196" y="92"  width="14" height="9" rx="2"/>
+    <rect x="196" y="124" width="14" height="9" rx="2"/>
+    <rect x="196" y="156" width="14" height="9" rx="2"/>
+  </g>
+  <g fill="#38BDF8">
+    <rect x="100" y="56" width="9" height="14" rx="2"/>
+    <rect x="132" y="56" width="9" height="14" rx="2"/>
+    <rect x="100" y="186" width="9" height="14" rx="2"/>
+    <rect x="132" y="186" width="9" height="14" rx="2"/>
+  </g>
+
+  <!-- document page with folded corner -->
+  <path d="M66 70 H160 L190 100 V186 H66 Z" fill="#F1F5F9"/>
+  <path d="M160 70 L190 100 H160 Z" fill="#CBD5E1"/>
+
+  <!-- doc text lines -->
+  <g stroke="#38BDF8" stroke-width="8" stroke-linecap="round">
+    <line x1="84" y1="108" x2="150" y2="108"/>
+    <line x1="84" y1="128" x2="172" y2="128"/>
+    <line x1="84" y1="148" x2="160" y2="148"/>
+  </g>
+
+  <!-- digital waveform as the last "line" -->
+  <path d="M84 170 H98 V162 H114 V170 H130 V162 H150 V170 H172"
+        fill="none" stroke="url(#wave1)" stroke-width="8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
