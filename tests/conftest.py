@@ -13,6 +13,16 @@ pytest_plugins = ["sphinx.testing.fixtures"]
 FIXTURES = Path(__file__).parent / "fixtures" / "sv"
 
 
+@pytest.fixture(autouse=True)
+def _clear_index_cache():
+    """Isolate tests from the in-process index cache."""
+    from sphinx_systemverilog.model.index import clear_index_cache
+
+    clear_index_cache()
+    yield
+    clear_index_cache()
+
+
 @pytest.fixture(scope="session")
 def rootdir() -> Path:
     """Root for sphinx.testing's ``@pytest.mark.sphinx(testroot=...)``."""

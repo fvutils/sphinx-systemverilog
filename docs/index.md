@@ -21,6 +21,7 @@ usage/modules
 usage/diagrams
 usage/whole-tree
 usage/cross-referencing
+usage/advanced
 ```
 
 ```{toctree}

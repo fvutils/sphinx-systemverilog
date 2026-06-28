@@ -102,3 +102,63 @@ def _class_by_name(index: Any) -> dict[str, Any]:
             if obj.kind == "class":
                 out.setdefault(obj.name, obj)
     return out
+
+
+class SvInstanceDiagram(Directive):
+    """``.. sv:instance-diagram:: top`` -> a module instantiation hierarchy."""
+
+    required_arguments = 1
+    optional_arguments = 0
+    final_argument_whitespace = False
+    has_content = False
+
+    def run(self) -> list[nodes.Node]:
+        env = self.state.document.settings.env
+        top = self.arguments[0].strip().split("::")[-1]
+        index = getattr(env, "sv_index", None)
+        if index is None:
+            return []
+        edges = getattr(index, "instance_edges", {})
+        if top not in edges:
+            logger.warning(
+                "sphinx-systemverilog: no instantiation hierarchy for module %r "
+                "(is it a top-level design module?)", top, type="systemverilog",
+                location=(env.docname, self.lineno),
+            )
+            return []
+        node = graphviz()
+        node["code"] = build_instance_dot(edges, top)
+        node["options"] = {"docname": env.docname}
+        node["alt"] = f"Instance diagram of {top}"
+        return [node]
+
+
+def build_instance_dot(edges: dict, top: str) -> str:
+    """Graphviz ``dot`` for the structural composition reachable from *top*."""
+    lines = ["digraph instances {", "  rankdir=TB;",
+             '  node [shape=box, fontsize=10, height=0.25];',
+             '  edge [arrowsize=0.7, fontsize=8];']
+    nodes_in: set[str] = set()
+    drawn: set[tuple[str, str, str]] = set()
+    queue = [top]
+    visited: set[str] = set()
+    while queue:
+        mod = queue.pop()
+        if mod in visited:
+            continue
+        visited.add(mod)
+        nodes_in.add(mod)
+        for inst_name, child_type in edges.get(mod, []):
+            nodes_in.add(child_type)
+            key = (mod, child_type, inst_name)
+            if key not in drawn:
+                drawn.add(key)
+                lines.append(
+                    f'  "{mod}" -> "{child_type}" [label="{inst_name}"];'
+                )
+            queue.append(child_type)
+    for name in sorted(nodes_in):
+        attrs = ' style=filled fillcolor="#e8e8e8"' if name == top else ""
+        lines.append(f'  "{name}" [label="{name}"{attrs}];')
+    lines.append("}")
+    return "\n".join(lines)

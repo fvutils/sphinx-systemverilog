@@ -33,6 +33,9 @@ OBJECT_TYPES = {
     "parameter": ("parameter", ("parameter", "param", "obj")),
     "typedef": ("typedef", ("typedef", "type", "obj")),
     "macro": ("macro", ("macro", "obj")),
+    "covergroup": ("covergroup", ("covergroup", "obj")),
+    "coverpoint": ("coverpoint", ("coverpoint", "obj")),
+    "constraint": ("constraint", ("constraint", "obj")),
 }
 
 
@@ -256,11 +259,16 @@ class SystemVerilogDomain(Domain):
 
 
 #: Data-like kinds rendered as ``<type> <name> [= default]``.
-_DATA_KINDS = {"property", "port", "parameter", "typedef"}
+_DATA_KINDS = {
+    "property", "port", "parameter", "typedef",
+    "covergroup", "coverpoint", "constraint",
+}
 
 #: Kinds whose signature already begins with a SystemVerilog keyword, so the
 #: directive's kind label would be redundant.
-_KEYWORD_LED_KINDS = {"port", "parameter", "typedef"}
+_KEYWORD_LED_KINDS = {
+    "port", "parameter", "typedef", "covergroup", "coverpoint", "constraint",
+}
 
 
 def _signature_name(sig: str, kind: str) -> str:

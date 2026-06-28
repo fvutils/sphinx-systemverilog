@@ -29,6 +29,7 @@ def _build_index(app: Any) -> None:
         defines=config.sv_defines,
         base_path=app.confdir,
         nodocs_policy=config.sv_naturaldocs_nodocs,
+        document_macros=config.sv_document_macros,
     )
     app.env.sv_index = index
     logger.info(
@@ -49,7 +50,7 @@ def _build_index(app: Any) -> None:
 
 def setup(app: Any) -> dict[str, Any]:
     from .autodoc import AUTODOC_DIRECTIVES
-    from .autodoc.diagrams import SvInheritanceDiagram
+    from .autodoc.diagrams import SvInheritanceDiagram, SvInstanceDiagram
     from .config import register_config, validate_config
     from .domain import SystemVerilogDomain
 
@@ -59,6 +60,7 @@ def setup(app: Any) -> dict[str, Any]:
     register_config(app)
     app.add_domain(SystemVerilogDomain)
     app.add_directive_to_domain("sv", "inheritance-diagram", SvInheritanceDiagram)
+    app.add_directive_to_domain("sv", "instance-diagram", SvInstanceDiagram)
 
     for name, directive in AUTODOC_DIRECTIVES.items():
         app.add_directive(name, directive)

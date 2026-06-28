@@ -14,8 +14,12 @@ from .comments import clean_comment_block, split_leading_trivia
 from .locations import is_real_location, resolve_location
 from .objects import (
     KIND_CLASS,
+    KIND_CONSTRAINT,
+    KIND_COVERGROUP,
+    KIND_COVERPOINT,
     KIND_FUNCTION,
     KIND_INTERFACE,
+    KIND_MACRO,
     KIND_MODULE,
     KIND_PACKAGE,
     KIND_PARAMETER,
@@ -42,12 +46,17 @@ class ModelBuilder:
         include_dirs: Iterable[str] | None = None,
         defines: dict[str, str] | None = None,
         nodocs_policy: str = "include",
+        document_macros: bool = True,
     ) -> None:
         self.doc_style = doc_style
         self.include_dirs = list(include_dirs or [])
         self.defines = dict(defines or {})
         #: How to treat UVM ``-- NODOCS --`` blocks: "include" the prose or "skip".
         self.nodocs_policy = nodocs_policy
+        #: Whether to extract ``\\`define`` macros.
+        self.document_macros = document_macros
+        #: module type -> [(instance_name, child_module_type)] structural edges.
+        self.instance_edges: dict[str, list[tuple[str, str]]] = {}
         #: Error/fatal diagnostics rendered as strings; surfaced as warnings.
         self.diagnostics: list[str] = []
         #: Count of suppressed non-error (lint) diagnostics; surfaced as info.
@@ -122,7 +131,78 @@ class ModelBuilder:
             )
             if obj is not None:
                 roots.append(obj)
+
+        if self.document_macros:
+            roots.extend(self._collect_macros(trees))
+        self._collect_instances(comp)
         return roots
+
+    def _collect_instances(self, comp: Any) -> None:
+        """Capture module structural composition (instance hierarchy) edges."""
+        try:
+            root = comp.getRoot()
+            tops = list(root.topInstances)
+        except Exception:
+            return
+        visited: set[str] = set()
+        queue = list(tops)
+        while queue:
+            inst = queue.pop()
+            body = getattr(inst, "body", None)
+            type_name = _instance_type(inst)
+            if body is None or not type_name or type_name in visited:
+                continue
+            visited.add(type_name)
+            edges: list[tuple[str, str]] = []
+            for member in _iter_scope(body):
+                if member.kind == SymbolKind.Instance:
+                    child_type = _instance_type(member)
+                    if child_type:
+                        edges.append((member.name, child_type))
+                        queue.append(member)
+            if edges:
+                self.instance_edges[type_name] = edges
+
+    def _collect_macros(self, trees: list[Any]) -> list[SvObject]:
+        """Extract ``\\`define`` macros (with doc comments) from the token stream."""
+        from .ndblocks import _iter_tokens
+        from pyslang.parsing import TriviaKind
+
+        macros: list[SvObject] = []
+        seen: set[tuple[str, int]] = set()
+        for tree in trees:
+            sm = tree.sourceManager
+            root = getattr(tree, "root", None)
+            if root is None:
+                continue
+            for token in _iter_tokens(root):
+                for tr in token.trivia:
+                    if tr.kind != TriviaKind.Directive:
+                        continue
+                    syn = _trivia_syntax(tr)
+                    if syn is not None and type(syn).__name__ == \
+                            "DefineDirectiveSyntax":
+                        macro = self._build_macro(syn, sm, seen)
+                        if macro is not None:
+                            macros.append(macro)
+        return macros
+
+    def _build_macro(self, syn: Any, sm: Any, seen: set) -> SvObject | None:
+        name = syn.name.valueText
+        loc = resolve_location(sm, syn.name.location)
+        key = (name, loc.line if loc else 0, loc.file if loc else "")
+        if key in seen:
+            return None
+        seen.add(key)
+        obj = SvObject(
+            kind=KIND_MACRO, name=name, qualified_name=name,
+            signature=_macro_signature(syn),
+            location=loc,
+            raw_doc=_token_leading_doc(syn.getFirstToken(), include_inline=True),
+            doc_style=self.doc_style,
+        )
+        self._apply_nd(obj, syn)
+        return obj
 
     def _build_nd_index(self, trees: list[Any], sm: Any) -> None:
         """Build the NaturalDocs detached-block index when the dialect needs it."""
@@ -195,7 +275,13 @@ class ModelBuilder:
             return self._build_generic_class(sym, sm, parent_qname)
         if kind in (SymbolKind.Subroutine, SymbolKind.MethodPrototype):
             return self._build_subroutine(sym, sm, parent_qname)
+        if kind == SymbolKind.ConstraintBlock:
+            return self._build_constraint(sym, sm, parent_qname)
+        if kind == SymbolKind.CovergroupType:
+            return None  # documented via its ClassProperty instance
         if kind in (SymbolKind.ClassProperty, SymbolKind.Variable):
+            if _is_covergroup(sym):
+                return self._build_covergroup(sym, sm, parent_qname)
             return self._build_property(sym, sm, parent_qname)
         if kind == SymbolKind.TypeAlias:
             return self._build_simple(sym, KIND_TYPEDEF, sm, parent_qname,
@@ -258,6 +344,57 @@ class ModelBuilder:
 
         members.sort(key=lambda m: (m.location.line if m.location else 1 << 30))
         parent.children = members
+
+    def _build_constraint(
+        self, sym: Any, sm: Any, parent_qname: str | None
+    ) -> SvObject:
+        sig = "constraint " + sym.name
+        syntax = getattr(sym, "syntax", None)
+        if syntax is not None:
+            sig = _node_source(syntax, sm).split("{", 1)[0].strip() or sig
+        return self._build_simple(
+            sym, KIND_CONSTRAINT, sm, parent_qname, signature=sig
+        )
+
+    def _build_covergroup(
+        self, sym: Any, sm: Any, parent_qname: str | None
+    ) -> SvObject:
+        qname = _join(parent_qname, sym.name)
+        # The ClassProperty carries the name; its CovergroupType carries the
+        # syntax (and thus the doc comment and the `covergroup` location).
+        cgtype = getattr(sym, "type", None)
+        doc_sym = cgtype if cgtype is not None and getattr(cgtype, "syntax", None) \
+            else sym
+        loc = cgtype if cgtype is not None and is_real_location(
+            sm, getattr(cgtype, "location", None)) else sym
+        obj = SvObject(
+            kind=KIND_COVERGROUP, name=sym.name, qualified_name=qname,
+            signature="covergroup " + sym.name,
+            location=resolve_location(sm, loc.location),
+            raw_doc=self._leading_doc(doc_sym), doc_style=self.doc_style,
+        )
+        self._apply_nd(obj, sym)
+        obj.children = self._coverpoints(cgtype, sm, qname)
+        return obj
+
+    def _coverpoints(self, cgtype: Any, sm: Any, qname: str) -> list[SvObject]:
+        out: list[SvObject] = []
+        if cgtype is None:
+            return out
+        for body in _iter_scope(cgtype):           # CovergroupBody
+            for cp in _iter_scope(body):
+                if cp.kind != SymbolKind.Coverpoint:
+                    continue
+                if not is_real_location(sm, getattr(cp, "location", None)):
+                    continue
+                out.append(SvObject(
+                    kind=KIND_COVERPOINT, name=cp.name,
+                    qualified_name=_join(qname, cp.name),
+                    signature="coverpoint " + cp.name,
+                    location=resolve_location(sm, cp.location),
+                    raw_doc=self._leading_doc(cp), doc_style=self.doc_style,
+                ))
+        return out
 
     def _build_generic_class(
         self, sym: Any, sm: Any, parent_qname: str | None
@@ -505,6 +642,7 @@ _SCOPE_SYNTAX_NAMES = {
     "PackageDeclaration",
     "InterfaceDeclaration",
     "ProgramDeclaration",
+    "CovergroupDeclaration",
     "CompilationUnit",
 }
 
@@ -535,6 +673,48 @@ def _decl_token(sym: Any) -> Any | None:
         return getter()
     except Exception:
         return None
+
+
+def _trivia_syntax(trivia: Any) -> Any:
+    """Return the syntax node behind a Directive trivia (method or attr form)."""
+    s = getattr(trivia, "syntax", None)
+    if callable(s):
+        try:
+            return s()
+        except Exception:
+            return None
+    return s
+
+
+def _macro_signature(syn: Any) -> str:
+    name = syn.name.valueText
+    args = ""
+    formal = getattr(syn, "formalArguments", None)
+    if formal is not None:
+        args = _normalize_ws(str(formal))
+    body = " ".join(t.valueText for t in getattr(syn, "body", []) or [])
+    body = body.replace("\\", "").strip()
+    sig = f"`define {name}{args}"
+    if body and len(body) <= 48:
+        sig += " " + body
+    return sig
+
+
+def _instance_type(inst: Any) -> str | None:
+    """The module/definition type name behind an instance (or its body)."""
+    body = getattr(inst, "body", None)
+    if body is not None:
+        defn = getattr(body, "definition", None)
+        if defn is not None and getattr(defn, "name", ""):
+            return defn.name
+        if getattr(body, "name", ""):
+            return body.name
+    return getattr(inst, "name", None)
+
+
+def _is_covergroup(sym: Any) -> bool:
+    t = getattr(sym, "type", None)
+    return t is not None and str(getattr(t, "kind", "")) == "SymbolKind.CovergroupType"
 
 
 def _safe_flags(sym: Any) -> str:
@@ -605,10 +785,12 @@ def _node_source(node: Any, sm: Any) -> str:
         return _normalize_ws(str(node))
 
 
-def _token_leading_doc(token: Any) -> str | None:
+def _token_leading_doc(token: Any, include_inline: bool = False) -> str | None:
     if token is None:
         return None
-    _, leading = split_leading_trivia(token)
+    trailing_prev, leading = split_leading_trivia(token)
+    if include_inline and not leading and trailing_prev:
+        leading = trailing_prev
     return clean_comment_block(leading)
 
 

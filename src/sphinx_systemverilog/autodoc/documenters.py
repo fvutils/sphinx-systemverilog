@@ -171,8 +171,8 @@ class SvDocumenter:
         if child.name in (self.options.get("exclude-members") or ()):
             return True
         # Undocumented leaf members are hidden unless :undoc-members: is set.
-        # Ports and parameters are structural API and always shown.
-        structural = child.kind in ("port", "parameter")
+        # Ports, parameters and coverpoints are structural API and always shown.
+        structural = child.kind in ("port", "parameter", "coverpoint")
         default_skip = (
             not child.is_documented
             and not child.is_scope

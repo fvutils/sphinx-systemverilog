@@ -24,10 +24,16 @@ KIND_PORT = "port"
 KIND_PARAMETER = "parameter"
 KIND_TYPEDEF = "typedef"
 KIND_MACRO = "macro"
+KIND_COVERGROUP = "covergroup"
+KIND_COVERPOINT = "coverpoint"
+KIND_CONSTRAINT = "constraint"
 
 #: Kinds that may contain members (used by the builder and autodoc recursion).
 SCOPE_KINDS = frozenset(
-    {KIND_PACKAGE, KIND_MODULE, KIND_INTERFACE, KIND_PROGRAM, KIND_CLASS}
+    {
+        KIND_PACKAGE, KIND_MODULE, KIND_INTERFACE, KIND_PROGRAM, KIND_CLASS,
+        KIND_COVERGROUP,
+    }
 )
 
 

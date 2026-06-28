@@ -34,6 +34,8 @@ def register_config(app: "Sphinx") -> None:
     app.add_config_value("sv_default_options", {}, "env", types=[dict])
     # Generate '[source]' links to highlighted SystemVerilog source.
     app.add_config_value("sv_viewcode", True, "env", types=[bool])
+    # Extract and document `\`define` macros.
+    app.add_config_value("sv_document_macros", True, "env", types=[bool])
 
 
 def validate_config(app: "Sphinx", config) -> None:
