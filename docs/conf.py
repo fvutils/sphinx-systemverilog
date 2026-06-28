@@ -32,4 +32,16 @@ master_doc = "index"
 html_theme = "alabaster"
 html_static_path = ["_static"]
 
+# Branding (shared icon set lives in ../assets/icons; paths are relative to this
+# conf dir and Sphinx copies them into the build).
+html_logo = "../assets/icons/png/logo-horizontal.png"
+html_favicon = "../assets/icons/favicon.ico"
+html_theme_options = {
+    "description": "Sphinx autodoc for SystemVerilog, powered by pyslang",
+    "github_user": "fvutils",
+    "github_repo": "sphinx-systemverilog",
+    "github_button": True,
+    "logo_name": False,
+}
+
 myst_enable_extensions = ["colon_fence", "deflist"]
