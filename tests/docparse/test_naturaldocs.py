@@ -75,6 +75,14 @@ def test_stray_rst_is_escaped(parse):
     assert "\\`" in d.summary
 
 
+def test_trailing_underscore_escaped_but_identifiers_preserved(parse):
+    d = parse("Function: f\n\nThe rhs_ argument differs from get_name behaviour.")
+    # A trailing underscore (an RST reference) is escaped...
+    assert "rhs\\_" in d.summary
+    # ...but an internal underscore in an identifier is left intact.
+    assert "get_name" in d.summary
+
+
 def test_matches_detects_dialect(parse):
     nd = get_parser("naturaldocs")
     assert nd.matches("Function: get_name\n\nDoes a thing.")

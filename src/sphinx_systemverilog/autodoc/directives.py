@@ -50,6 +50,9 @@ class AutoSvDirective(Directive):
         "doc-style": directives.unchanged,
         "recursive": directives.flag,
         "show-inheritance": directives.flag,
+        # Skip silently (no warning) when the target is not in the index - used
+        # to make a page render the same whether optional sources are present.
+        "optional": directives.flag,
     }
 
     #: Restrict the resolved object to this kind (None = any).
@@ -71,11 +74,12 @@ class AutoSvDirective(Directive):
 
         obj = index.get(target)
         if obj is None:
-            logger.warning(
-                "sphinx-systemverilog: cannot find SystemVerilog object %r",
-                target, type="systemverilog",
-                location=(env.docname, self.lineno),
-            )
+            if "optional" not in self.options:
+                logger.warning(
+                    "sphinx-systemverilog: cannot find SystemVerilog object %r",
+                    target, type="systemverilog",
+                    location=(env.docname, self.lineno),
+                )
             return []
         if self.object_kind and obj.kind != self.object_kind:
             logger.warning(

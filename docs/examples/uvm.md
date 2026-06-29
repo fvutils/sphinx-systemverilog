@@ -1,13 +1,21 @@
 # Example: documenting UVM
 
 The extension documents the full [UVM](https://www.accellera.org/) library
-end-to-end from its NaturalDocs-commented source. This is the project's Phase-2
-acceptance target and is exercised by the `corpus` test suite.
+end-to-end from its NaturalDocs-commented source — the project's Phase-2
+acceptance target. A real build produces ~5700 documented objects in a few
+seconds.
 
-> This page describes the configuration and expected results rather than
-> embedding the whole UVM reference, so the project's own documentation builds
-> without the (large) UVM sources present. With the configuration below, a real
-> build produces ~3700 documented objects in a few seconds.
+:::{only} have_uvm
+This page is **generated live** from the UVM sources in this repository (fetched
+by ivpm into `packages/uvm`). Scroll to {ref}`uvm-reference` for the rendered
+output.
+:::
+
+:::{only} not have_uvm
+This rendering is shown only when the (large) UVM sources are present. They are
+not in this build, so the page describes the configuration and expected results;
+run `ivpm update -a` to fetch UVM and the reference renders below.
+:::
 
 ## Configuration
 
@@ -24,17 +32,6 @@ sv_doc_style    = "naturaldocs"
 
 `uvm_pkg.sv` `` `include ``s the entire library, so a single build unit
 elaborates all of UVM into one project-wide index.
-
-## Documenting classes
-
-```rst
-.. autosvclass:: uvm_object
-   :members:
-   :show-inheritance:
-
-.. autosvclass:: uvm_component
-   :members:
-```
 
 What you get:
 
@@ -64,3 +61,23 @@ single {doc}`whole-tree <../usage/whole-tree>` directive:
 UVM elaborates with many benign lint-style warnings (width truncation, dangling
 `else`, …). These are **not** surfaced as build warnings; they are counted and
 reported once at INFO level. Only genuine parse errors are surfaced.
+
+(uvm-reference)=
+
+## Rendered UVM reference
+
+When the UVM sources are present, the classes below are pulled directly from
+them (otherwise this section is empty — run `ivpm update -a` to fetch UVM).
+
+```{eval-rst}
+.. autosvclass:: uvm_object
+   :members:
+   :show-inheritance:
+   :doc-style: naturaldocs
+   :optional:
+
+.. autosvclass:: uvm_sequence_item
+   :members:
+   :doc-style: naturaldocs
+   :optional:
+```

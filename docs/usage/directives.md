@@ -28,6 +28,7 @@ Each takes a qualified name as its argument:
 | `:exclude-members:` | Comma/space-separated names to skip. |
 | `:member-order:` | `source` (default), `alpha`, or `groups`. |
 | `:doc-style:` | Override the dialect for this directive. |
+| `:optional:` | Skip silently (no warning) when the target is not in the index. Useful for pages that render the same whether optional sources are present. |
 
 ## Manual domain directives
 

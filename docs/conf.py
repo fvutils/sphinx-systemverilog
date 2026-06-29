@@ -19,10 +19,31 @@ extensions = [
 
 # -- sphinx-systemverilog -----------------------------------------------------
 _here = os.path.dirname(__file__)
-sv_source_dirs = [os.path.join(_here, "..", "tests", "fixtures", "sv")]
+_fixtures = os.path.abspath(os.path.join(_here, "..", "tests", "fixtures", "sv"))
 # "auto" sniffs each comment: NaturalDocs blocks use the ND dialect, everything
-# else falls back to native - so both example pages render from one config.
+# else falls back to native - so all example pages render from one config.
 sv_doc_style = "auto"
+
+# When the UVM sources are present (fetched by ivpm into ../packages/uvm), build
+# them into the index alongside the fixtures and publish a live UVM reference.
+# When absent (e.g. a plain `pip install` CI run), fall back to fixtures only and
+# the UVM page renders as a guide.  The ``have_uvm`` tag gates the live content.
+_uvm_src = os.path.abspath(os.path.join(_here, "..", "packages", "uvm", "src"))
+_uvm_pkg = os.path.join(_uvm_src, "uvm_pkg.sv")
+_fixture_files = [
+    os.path.join(_fixtures, f)
+    for f in sorted(os.listdir(_fixtures))
+    if f.endswith((".sv", ".svh"))
+]
+
+if os.path.isfile(_uvm_pkg) and not os.environ.get("SV_DOCS_NO_UVM"):
+    # uvm_pkg.sv `include`s the whole library; the fixture files are parsed as
+    # additional build units into the same index.
+    sv_build_units = [_uvm_pkg, *_fixture_files]
+    sv_include_dirs = [_uvm_src]
+    tags.add("have_uvm")  # noqa: F821 (Sphinx injects `tags`)
+else:
+    sv_source_dirs = [_fixtures]
 
 # -- General ------------------------------------------------------------------
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}

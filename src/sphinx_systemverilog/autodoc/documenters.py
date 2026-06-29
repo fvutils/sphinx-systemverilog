@@ -133,7 +133,9 @@ class SvDocumenter:
         return opts
 
     def _doc_lines(self, obj: SvObject) -> list[str]:
-        style = obj.doc_style or self.default_style
+        # The directive's resolved style (its :doc-style: override or the global
+        # default) wins; the object's stored style is only a fallback.
+        style = self.default_style or obj.doc_style
         parser = get_parser_for(style, obj.raw_doc or "")
         parsed = parser.parse(obj.raw_doc or "")
         lines = parsed.as_rst()

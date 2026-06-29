@@ -40,6 +40,11 @@ def convert_tilde_code(text: str) -> str:
 # "start-string without end-string" warnings.
 _RST_SPECIAL = re.compile(r"([*`|])")
 
+# A trailing underscore at a word boundary (``rhs_``) is an RST reference and
+# triggers "Unknown target name" errors; escape it without touching internal
+# underscores in identifiers like ``get_name``.
+_TRAILING_UNDERSCORE = re.compile(r"(?<=\w)_(?=\W|$)")
+
 
 def escape_rst_inline(text: str) -> str:
     """Backslash-escape stray RST inline-markup characters in prose.
@@ -47,7 +52,8 @@ def escape_rst_inline(text: str) -> str:
     Applied to NaturalDocs/Doxygen prose (which is not authored as RST) *before*
     our own conversions add intentional ``literals`` and roles, so those survive.
     """
-    return _RST_SPECIAL.sub(r"\\\1", text)
+    text = _RST_SPECIAL.sub(r"\\\1", text)
+    return _TRAILING_UNDERSCORE.sub(r"\\_", text)
 
 
 def convert_inline(text: str) -> str:
