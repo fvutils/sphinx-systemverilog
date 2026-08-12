@@ -34,6 +34,13 @@ examples/naturaldocs
 examples/uvm
 ```
 
+```{toctree}
+:maxdepth: 2
+:caption: UVM reference
+
+uvm/index
+```
+
 ## Status
 
 All planned phases (1–5) are implemented: the `native`, `naturaldocs` and

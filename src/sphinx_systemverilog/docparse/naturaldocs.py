@@ -18,6 +18,7 @@ import re
 
 from .base import DocstringParser, ParsedDoc, register_parser
 from .inline import collect_angle_xrefs, convert_inline
+from .sanitize import sanitize_prose
 
 #: ND header keywords -> the canonical object kind they introduce.
 HEADER_KEYWORDS = {
@@ -121,7 +122,9 @@ class NaturalDocsParser(DocstringParser):
         while lines and not lines[-1].strip():
             lines.pop()
 
-        body_text = convert_inline("\n".join(lines)).strip("\n")
+        # Repair prose structure (banner rules, aligned continuation lines)
+        # before inline conversion, so escaping sees final line content.
+        body_text = convert_inline(sanitize_prose("\n".join(lines))).strip("\n")
         para = _first_paragraph(body_text)
         summary = " ".join(p.strip() for p in para.splitlines()).strip()
         rest = body_text[len(para):].strip("\n")

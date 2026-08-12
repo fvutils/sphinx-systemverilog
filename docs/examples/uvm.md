@@ -2,20 +2,12 @@
 
 The extension documents the full [UVM](https://www.accellera.org/) library
 end-to-end from its NaturalDocs-commented source — the project's Phase-2
-acceptance target. A real build produces ~5700 documented objects in a few
-seconds.
+acceptance target. A real build produces ~5,200 documented objects, 288 of them
+classes, in a few seconds.
 
-:::{only} have_uvm
-This page is **generated live** from the UVM sources in this repository (fetched
-by ivpm into `packages/uvm`). Scroll to {ref}`uvm-reference` for the rendered
-output.
-:::
-
-:::{only} not have_uvm
-This rendering is shown only when the (large) UVM sources are present. They are
-not in this build, so the page describes the configuration and expected results;
-run `ivpm update -a` to fetch UVM and the reference renders below.
-:::
+The result is published as its own section: **{doc}`../uvm/index`**. This page
+covers the configuration that produces it and what to expect from a library of
+that size.
 
 ## Configuration
 
@@ -36,48 +28,33 @@ elaborates all of UVM into one project-wide index.
 What you get:
 
 - **Inheritance** — `uvm_object extends uvm_void`, `uvm_component extends
-  uvm_report_object`, etc., with an inheritance diagram.
+  uvm_report_object`, etc., with {doc}`inheritance diagrams <../usage/diagrams>`.
 - **Members** — `extern` method prototypes (which UVM uses throughout) are
   documented with their signatures.
 - **Groups** — UVM `Group:` headers (`Seeding`, `Identification`, …) become
-  labeled subsections.
+  labeled subsections, and `:member-order: groups` renders members in that order.
 - **Prose** — detached `// Function -- NODOCS -- name` blocks, separated from
   their prototypes by `@uvm-ieee` annotations, are associated correctly, with
   `<xref>` and `~code~` markup converted.
 
-## Documenting the whole library at once
+## Splitting a large library across pages
 
-Rather than listing classes by hand, generate the entire UVM API tree with a
-single {doc}`whole-tree <../usage/whole-tree>` directive:
+A single page holding 288 classes is unreadable and slow to load. Select each
+page's slice of the index by source path, which for a library organized like UVM
+partitions it with no per-class curation:
 
 ```rst
 .. autosvsummary::
-   :packages: uvm_pkg
    :kinds: class
+   :member-order: groups
+   :files: reg/*.svh, reg/sequences/*.svh
 ```
+
+See {doc}`../usage/whole-tree` for the full set of scoping options, and
+{doc}`../uvm/index` for how the eleven pages of the UVM reference divide it up.
 
 ## Diagnostics
 
 UVM elaborates with many benign lint-style warnings (width truncation, dangling
 `else`, …). These are **not** surfaced as build warnings; they are counted and
 reported once at INFO level. Only genuine parse errors are surfaced.
-
-(uvm-reference)=
-
-## Rendered UVM reference
-
-When the UVM sources are present, the classes below are pulled directly from
-them (otherwise this section is empty — run `ivpm update -a` to fetch UVM).
-
-```{eval-rst}
-.. autosvclass:: uvm_object
-   :members:
-   :show-inheritance:
-   :doc-style: naturaldocs
-   :optional:
-
-.. autosvclass:: uvm_sequence_item
-   :members:
-   :doc-style: naturaldocs
-   :optional:
-```

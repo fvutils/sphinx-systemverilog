@@ -13,6 +13,7 @@ import re
 
 from .base import DocField, DocstringParser, ParsedDoc, register_parser
 from .inline import escape_rst_inline
+from .sanitize import sanitize_prose
 
 # A command line: ``@cmd`` or ``\cmd`` followed by its argument(s).
 _CMD_RE = re.compile(r"^[@\\](\w+)\b[ \t]*(.*)$")
@@ -103,7 +104,9 @@ class DoxygenParser(DocstringParser):
             brief, body = _split_first_paragraph(body)
 
         summary = " ".join(s.strip() for s in brief if s.strip()).strip()
-        body_text = "\n".join(body).strip("\n")
+        # Doxygen prose is not RST either: repair banner rules and aligned
+        # continuation lines before the body reaches a directive body.
+        body_text = sanitize_prose("\n".join(body)).strip("\n")
         return ParsedDoc(summary=summary, body=body_text, fields=fields, xrefs=xrefs)
 
     def matches(self, raw: str) -> bool:

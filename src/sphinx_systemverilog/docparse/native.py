@@ -18,6 +18,18 @@ _FIELD_RE = re.compile(r"^:(\w+)(?:\s+([^:]+))?:\s*(.*)$")
 #: Inline cross-reference written as :sv:...:`name` - captured as an xref token.
 _XREF_RE = re.compile(r":sv:\w+:`([^`]+)`")
 
+#: Signals that a comment really was authored as reStructuredText.  Used only by
+#: ``auto`` sniffing: a comment with none of these is prose, and handing it to
+#: this parser (which passes the body through as RST) is how a stray ``*`` or
+#: trailing ``_`` in a 15-year-old banner comment becomes a build warning.
+_RST_SIGNALS = (
+    re.compile(r"^\s*:\w+(?:\s+[^:]+)?:\s", re.M),   # :param x: / :returns:
+    re.compile(r"``[^`]+``"),                         # ``literal``
+    re.compile(r":\w+:`[^`]+`"),                      # :role:`target`
+    re.compile(r"^\s*\.\.\s+\w+::", re.M),            # .. directive::
+    re.compile(r"::\s*$", re.M),                      # literal block marker
+)
+
 
 class NativeParser(DocstringParser):
     name = "native"
@@ -53,6 +65,9 @@ class NativeParser(DocstringParser):
         body = "\n".join(body_lines).strip("\n")
         xrefs = _XREF_RE.findall(text)
         return ParsedDoc(summary=summary, body=body, fields=fields, xrefs=xrefs)
+
+    def matches(self, raw: str) -> bool:
+        return any(sig.search(raw or "") for sig in _RST_SIGNALS)
 
 
 def _make_field(m: "re.Match[str]") -> DocField:

@@ -70,3 +70,9 @@ html_theme_options = {
 }
 
 myst_enable_extensions = ["colon_fence", "deflist"]
+
+# Pygments' SystemVerilog lexer cannot tokenize a compiler-directive backtick in
+# every position UVM uses one, so highlighting a whole UVM source file in the
+# viewcode pages falls back to relaxed mode. That is a Pygments limitation, not
+# a content problem, and it must not stand between this build and -W.
+suppress_warnings = ["misc.highlighting_failure"]

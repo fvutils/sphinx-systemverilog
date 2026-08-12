@@ -91,12 +91,17 @@ def get_parser(style: str) -> DocstringParser:
 
 
 def get_parser_for(style: str, raw: str) -> DocstringParser:
-    """Like :func:`get_parser` but resolves ``"auto"`` against *raw* content."""
+    """Like :func:`get_parser` but resolves ``"auto"`` against *raw* content.
+
+    The fallback is ``plain``, not ``native``: text that matched no dialect and
+    carries no RST signal is prose, and passing prose through as RST is how a
+    banner comment turns into a build warning.
+    """
     if style == "auto":
         for parser in _REGISTRY.values():
             if parser.matches(raw):
                 return parser
-        return get_parser("native")
+        return get_parser("plain")
     return get_parser(style)
 
 

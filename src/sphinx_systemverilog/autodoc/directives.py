@@ -8,6 +8,8 @@ it flows through the ``sv`` domain.
 
 from __future__ import annotations
 
+import re
+from functools import lru_cache
 from typing import Any
 
 from docutils import nodes
@@ -32,6 +34,61 @@ def _names_option(arg: str | None) -> list[str]:
     if not arg:
         return []
     return [a.strip() for a in arg.replace(",", " ").split() if a.strip()]
+
+
+def _patterns_option(arg: str | None) -> list[str]:
+    """``:files:`` -> path globs.  Split on commas/whitespace like the rest.
+
+    Paths are not permitted to contain whitespace or commas here; a library
+    laid out that way is better selected by ``:packages:``.
+    """
+    return _names_option(arg)
+
+
+@lru_cache(maxsize=256)
+def _path_pattern(pattern: str) -> "re.Pattern[str]":
+    """Compile a path glob, with the separator-aware semantics people expect.
+
+    ``*`` and ``?`` stop at ``/``; ``**`` crosses directories.  ``fnmatch``
+    alone would make ``reg/*.svh`` also match ``reg/sequences/x.svh``, which
+    silently documents a class on two pages.
+
+    A pattern starting with ``/`` is anchored to the absolute path; otherwise it
+    matches a path *suffix* at a segment boundary (``base/uvm_report_*.svh``),
+    which is what makes one pattern work across the different absolute
+    locations a library sits at on a developer's machine and in CI.
+    """
+    anchored = pattern.startswith("/")
+    out: list[str] = []
+    i = 0
+    while i < len(pattern):
+        char = pattern[i]
+        if char == "*":
+            if pattern.startswith("**", i):
+                out.append(".*")
+                i += 2
+                continue
+            out.append("[^/]*")
+        elif char == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(char))
+        i += 1
+    body = "".join(out)
+    prefix = "" if anchored else r"(?:.*/)?"
+    return re.compile(f"^{prefix}{body}$")
+
+
+def _matches_files(obj: Any, patterns: list[str]) -> bool:
+    """True when *obj* was declared in a file matching one of *patterns*."""
+    location = getattr(obj, "location", None)
+    path = getattr(location, "file", None)
+    if not path:
+        return False
+    path = path.replace("\\", "/")
+    return any(
+        _path_pattern(pattern.replace("\\", "/")).match(path) for pattern in patterns
+    )
 
 
 class AutoSvDirective(Directive):
@@ -151,7 +208,12 @@ class AutoSvSummaryDirective(Directive):
         "packages": _names_option,
         "kinds": _names_option,
         "exclude": _names_option,
+        "files": _patterns_option,
         "doc-style": directives.unchanged,
+        # As for the auto* directives: stay silent when the scope selects
+        # nothing, so a page renders the same whether optional sources (a large
+        # vendor library, say) are present or not.
+        "optional": directives.flag,
     }
 
     def run(self) -> list[nodes.Node]:
@@ -171,6 +233,7 @@ class AutoSvSummaryDirective(Directive):
         packages = set(self.options.get("packages") or [])
         kinds = set(self.options.get("kinds") or [])
         exclude = set(self.options.get("exclude") or [])
+        files = list(self.options.get("files") or [])
 
         # Without a kind filter, document top-level roots (packages/modules);
         # with one, gather matching objects at any depth.
@@ -191,7 +254,16 @@ class AutoSvSummaryDirective(Directive):
                 continue
             if glob and not fnmatch.fnmatch(obj.name, glob):
                 continue
+            if files and not _matches_files(obj, files):
+                continue
             roots.append(obj)
+
+        if files and not roots and "optional" not in self.options:
+            logger.warning(
+                "sphinx-systemverilog: :files: %s matched no objects",
+                " ".join(files), type="systemverilog",
+                location=(env.docname, self.lineno),
+            )
 
         options = dict(env.config.sv_default_options or {})
         if "members" not in self.options:

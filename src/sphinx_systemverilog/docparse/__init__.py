@@ -16,6 +16,7 @@ from .base import (
 from . import naturaldocs  # noqa: F401
 from . import doxygen  # noqa: F401
 from . import native  # noqa: F401
+from . import plain  # noqa: F401
 
 __all__ = [
     "DocField",

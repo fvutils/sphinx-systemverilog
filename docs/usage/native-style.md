@@ -34,6 +34,28 @@ A trailing comment attaches to the declaration it follows:
 rand bit [31:0] addr;   // The target address.
 ```
 
+## `native` versus `auto`
+
+Under `sv_doc_style = "auto"` a comment is handed to this parser when it carries
+a sign of having been written as reStructuredText — a field list, a
+``literal``, a `:role:`, an explicit directive, or a `::` literal block. That
+test matters because this parser passes the body through *unchanged*: it is the
+only dialect that can emit RST, and therefore the only one that can emit
+*broken* RST.
+
+Text with no dialect marker and no RST signal is treated as plain prose
+instead — escaped and structurally repaired, so a banner comment like
+
+```systemverilog
+// ----------------------------------------
+//  *** Do not call directly ***
+// ----------------------------------------
+```
+
+renders as the words it contains rather than as a transition followed by an
+unterminated emphasis. Setting `sv_doc_style = "native"` explicitly always gets
+this parser, whatever the comment looks like.
+
 ## Cross-references inside comments
 
 Write a normal domain role and it resolves like anywhere else:

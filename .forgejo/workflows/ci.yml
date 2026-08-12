@@ -71,9 +71,9 @@ jobs:
     # extension by name, so what gets documented is the artifact we ship.
     #
     # The UVM sources come from ivpm, exactly as they do for a developer working
-    # in this tree. Without them conf.py falls back to the fixtures and the UVM
-    # page renders as a guide rather than a live reference -- a quietly reduced
-    # doc set, which is why the size check below is a hard failure.
+    # in this tree. Without them conf.py falls back to the fixtures and the whole
+    # UVM reference renders empty -- a quietly reduced doc set, which is what the
+    # coverage check below turns into a hard failure.
     needs: build
     runs-on: ubuntu-latest
 
@@ -113,38 +113,30 @@ jobs:
           print('extension:', m.__file__, m.__version__)
           sys.exit(0 if 'site-packages' in m.__file__ else 'built wheel is being shadowed by the source tree')
           "
-          ./packages/python/bin/python -m sphinx -b html docs docs/_build/html 2>&1 | tee /tmp/sphinx.log
+          ./packages/python/bin/python -m sphinx -W --keep-going -b html docs docs/_build/html 2>&1 | tee /tmp/sphinx.log
           touch docs/_build/html/.nojekyll
           rm -rf docs/_build/html/.doctrees docs/_build/doctrees
 
-      - name: Fail on content-loss warnings
-        # sphinx-build exits 0 even when an extension quietly fails to pull in
-        # content, so the exit code alone is not a sufficient check.
+      - name: Report the build
+        # -W above already fails the build on any warning; this is here so the
+        # log says how much was produced, which is the number that moves when a
+        # scoping pattern silently stops matching.
         run: |
-          n=$(grep -cE "WARNING: (autodoc|Unable to|Problems with|dot command|toctree contains reference to nonexisting)" /tmp/sphinx.log || true)
-          if [ "$n" -gt 0 ]; then
-            echo "::error::$n Sphinx content warnings -- pages would ship incomplete"
-            grep -E "WARNING:" /tmp/sphinx.log | head -10
-            exit 1
-          fi
-          echo "OK: no content-loss warnings"
           echo "generated pages: $(find docs/_build/html -name '*.html' | wc -l)"
+          grep -E "WARNING|ERROR" /tmp/sphinx.log | head -5 || true
 
-      - name: Check the UVM reference is live
-        # If the UVM sources were missing, examples/uvm.html still builds -- as a
-        # short guide page. Only a size check distinguishes that from the real
-        # reference, and shipping the guide by accident is the failure this
-        # whole job exists to prevent.
+      - name: Check every documented class reached a page
+        # The UVM reference splits 288 classes across pages by source path.
+        # Nothing in Sphinx notices when a class falls between two of those
+        # patterns -- the build succeeds and the class is simply gone -- so
+        # compare the parsed index against the published objects.inv. This also
+        # fails closed if the UVM sources never reached the build at all, since
+        # then every reference page renders empty.
         run: |
-          f=docs/_build/html/examples/uvm.html
-          [ -f "$f" ] || { echo "::error::missing $f"; exit 1; }
-          bytes=$(wc -c < "$f")
-          if [ "$bytes" -lt 50000 ]; then
-            echo "::error::$f is only ${bytes} bytes -- the UVM sources did not reach the build"
-            exit 1
-          fi
-          echo "OK: examples/uvm.html (${bytes} bytes)"
+          ./packages/python/bin/python scripts/check-docs-coverage.py \
+            --html docs/_build/html --uvm packages/uvm/src
           test -d docs/_build/html/_images || { echo "::error::no diagrams were rendered"; exit 1; }
+          echo "diagrams: $(ls docs/_build/html/_images | wc -l)"
 
       - name: Upload docs
         # Consumed by the host-side docs staging poller; the artifact name follows

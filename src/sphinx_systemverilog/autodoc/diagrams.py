@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from docutils import nodes
-from docutils.parsers.rst import Directive
+from docutils.parsers.rst import Directive, directives
 from sphinx.ext.graphviz import graphviz
 from sphinx.util import logging
 
@@ -25,6 +25,11 @@ class SvInheritanceDiagram(Directive):
     optional_arguments = 0
     final_argument_whitespace = False
     has_content = False
+    option_spec = {
+        # As for the auto* directives: skip silently when the target is absent,
+        # so a page renders the same whether optional sources are present.
+        "optional": directives.flag,
+    }
 
     def run(self) -> list[nodes.Node]:
         env = self.state.document.settings.env
@@ -34,6 +39,8 @@ class SvInheritanceDiagram(Directive):
             return []
         obj = index.get(target)
         if obj is None or obj.kind != "class":
+            if "optional" in self.options:
+                return []
             logger.warning(
                 "sphinx-systemverilog: inheritance-diagram target %r is not a "
                 "documented class", target, type="systemverilog",
