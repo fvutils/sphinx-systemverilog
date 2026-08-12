@@ -6,7 +6,7 @@ ordinary push can never produce a wheel whose version collides with a
 release on PyPI.
 """
 
-BASE = "0.0.1"
+BASE = "0.1.0"
 SUFFIX = ""
 
 # Read by pyproject.toml's dynamic version.
