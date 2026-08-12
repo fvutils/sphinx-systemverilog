@@ -1,0 +1,114 @@
+# CI/CD for fvutils/sphinx-systemverilog on Forgejo Actions.
+#
+# Deliberately smaller than .github/workflows/ci.yml: this is the release path.
+# Three differences from the GitHub workflow, each intentional:
+#
+#  1. No third-party actions. A bare `uses:` resolves against code.forgejo.org
+#     (Forgejo's DEFAULT_ACTIONS_URL), not github.com, so fvutils/ivpm-setup and
+#     pypa/gh-action-pypi-publish are unavailable here. Dependencies come from
+#     PyPI via pip and publishing is plain `twine`, which keeps GitHub off the
+#     critical path of a release.
+#  2. Only the unit and sphinx tests run. The corpus tests need the UVM tarball,
+#     which is an ivpm dependency; GitHub Actions still covers those nightly.
+#  3. Releases are tag-driven. A `v<version>` tag is the deliberate act; pushes
+#     to main build and test, but their dev-suffixed artifacts never reach PyPI.
+name: CI
+
+on:
+  - push
+  - pull_request
+  - workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up a build environment
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -q --upgrade pip build twine
+          /tmp/venv/bin/pip install -q ".[dev]"
+
+      - name: Run unit and integration tests
+        run: /tmp/venv/bin/python -m pytest -m "unit or sphinx" -q
+
+      - name: Stamp build version
+        # Tag builds keep the clean BASE version; everything else gets a
+        # .<run-id> dev suffix so an ordinary push can never produce a wheel
+        # whose version could collide with a release on PyPI.
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) echo "tag build -- leaving version clean" ;;
+            *) sed -i 's/^SUFFIX = ""$/SUFFIX = ".'"$GITHUB_RUN_ID"'"/' \
+                 src/sphinx_systemverilog/__version__.py ;;
+          esac
+          grep '^SUFFIX = ' src/sphinx_systemverilog/__version__.py
+
+      - name: Build sdist and wheel
+        run: |
+          rm -rf dist/
+          /tmp/venv/bin/python -m build .
+          /tmp/venv/bin/twine check dist/*
+          ls -la dist/
+
+      - name: Upload distributions
+        uses: forgejo/upload-artifact@v4
+        with:
+          name: dist-sphinx-systemverilog
+          path: dist/*
+          if-no-files-found: error
+
+  publish-pypi:
+    # Releases only. A version number on PyPI can be yanked but never reused.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download distributions
+        uses: forgejo/download-artifact@v4
+        with:
+          name: dist-sphinx-systemverilog
+          path: dist
+
+      - name: Check the tag matches the package version
+        # Guards against tagging v0.2.0 while __version__.py still says 0.1.0,
+        # which would publish a release under the wrong number, unfixably.
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          base=$(grep '^BASE = ' src/sphinx_systemverilog/__version__.py | sed 's/.*"\(.*\)".*/\1/')
+          echo "tag=$tag  BASE=$base"
+          if [ "$tag" != "$base" ]; then
+            echo "::error::tag v$tag does not match BASE $base in src/sphinx_systemverilog/__version__.py"
+            exit 1
+          fi
+          for f in dist/*; do
+            case "$(basename "$f")" in
+              sphinx_systemverilog-${base}-*.whl|sphinx_systemverilog-${base}.tar.gz) ;;
+              *) echo "::error::artifact $(basename "$f") is not version ${base}"; exit 1 ;;
+            esac
+          done
+          echo "OK: tag, source version and all artifacts agree on ${base}"
+
+      - name: Publish to PyPI
+        # Plain twine rather than a third-party action: this is the release
+        # path, and it should not depend on GitHub being reachable.
+        # PYPI_API_TOKEN is an organization secret on fvutils.
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$TWINE_PASSWORD" ]; then
+            echo "::error::PYPI_API_TOKEN is not visible to this repository"
+            exit 1
+          fi
+          python3 -m venv /tmp/twineenv
+          /tmp/twineenv/bin/pip install -q --upgrade pip twine
+          /tmp/twineenv/bin/twine check dist/*
+          /tmp/twineenv/bin/twine upload --non-interactive --skip-existing dist/*
+          echo "published $(ls dist/ | wc -l) artifacts"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sphinx-systemverilog"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Sphinx autodoc extension for SystemVerilog, powered by the pyslang parser"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,9 @@ dev = ["pytest>=8.0", "beautifulsoup4", "myst-parser"]
 [project.urls]
 Homepage = "https://github.com/fvutils/sphinx-systemverilog"
 Repository = "https://github.com/fvutils/sphinx-systemverilog"
+
+[tool.setuptools.dynamic]
+version = { attr = "sphinx_systemverilog.__version__._pkg_version" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

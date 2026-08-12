@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "0.0.1"
+from .__version__ import __version__
 
 
 def _build_index(app: Any) -> None:
