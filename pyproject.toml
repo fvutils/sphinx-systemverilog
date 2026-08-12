@@ -29,9 +29,12 @@ test = ["pytest>=8.0", "beautifulsoup4"]
 docs = ["myst-parser"]
 dev = ["pytest>=8.0", "beautifulsoup4", "myst-parser"]
 
+# git.dvkit.org is the authoritative source; dvkit.org serves the documentation. Any
+# GitHub presence is a downstream mirror and is deliberately not advertised here.
 [project.urls]
-Homepage = "https://github.com/fvutils/sphinx-systemverilog"
-Repository = "https://github.com/fvutils/sphinx-systemverilog"
+Homepage = "https://dvkit.org/fvutils/sphinx-systemverilog/"
+Documentation = "https://dvkit.org/fvutils/sphinx-systemverilog/"
+Source = "https://git.dvkit.org/fvutils/sphinx-systemverilog.git"
 
 [tool.setuptools.dynamic]
 version = { attr = "sphinx_systemverilog.__version__._pkg_version" }

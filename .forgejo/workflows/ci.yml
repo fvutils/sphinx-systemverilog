@@ -12,6 +12,11 @@
 #     which is an ivpm dependency; GitHub Actions still covers those nightly.
 #  3. Releases are tag-driven. A `v<version>` tag is the deliberate act; pushes
 #     to main build and test, but their dev-suffixed artifacts never reach PyPI.
+#  4. Docs are published as an artifact, not pushed to a gh-pages branch. Built
+#     HTML is a build output, never a git branch -- see
+#     ~/Documents/dvkit-docs-publishing-design.md F2 and section 5.8. A host-side
+#     poller picks up `docs-fvutils-sphinx-systemverilog` and stages it for
+#     review; nothing here can reach dvkit.org on its own.
 name: CI
 
 on:
@@ -61,10 +66,99 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  docs:
+    # Builds against the installed wheel, not the source tree: conf.py loads the
+    # extension by name, so what gets documented is the artifact we ship.
+    #
+    # The UVM sources come from ivpm, exactly as they do for a developer working
+    # in this tree. Without them conf.py falls back to the fixtures and the UVM
+    # page renders as a guide rather than a live reference -- a quietly reduced
+    # doc set, which is why the size check below is a hard failure.
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install graphviz
+        # Inheritance and instance diagrams render through sphinx.ext.graphviz,
+        # which shells out to `dot`. Without it Sphinx emits a warning and drops
+        # every diagram, so this is a build dependency, not a nicety.
+        run: |
+          apt-get update -qq && apt-get install -y -qq graphviz
+          dot -V
+
+      - name: Download distributions
+        uses: forgejo/download-artifact@v4
+        with:
+          name: dist-sphinx-systemverilog
+          path: dist
+
+      - name: Fetch dependencies with ivpm
+        # `ivpm update` builds packages/python from ivpm.yaml and unpacks the UVM
+        # release into packages/uvm, which is the path conf.py probes.
+        run: |
+          python3 -m pip install -q --upgrade pip ivpm
+          python3 -m ivpm update
+          test -f packages/uvm/src/uvm_pkg.sv
+
+      - name: Build HTML docs
+        # Installing the wheel replaces the editable install ivpm made, so the
+        # extension under test is the packaged one; the import check asserts that
+        # rather than assuming pip's uninstall step worked.
+        run: |
+          ./packages/python/bin/pip install -q --force-reinstall --no-deps dist/*.whl
+          ./packages/python/bin/python -c "
+          import sphinx_systemverilog as m, sys
+          print('extension:', m.__file__, m.__version__)
+          sys.exit(0 if 'site-packages' in m.__file__ else 'built wheel is being shadowed by the source tree')
+          "
+          ./packages/python/bin/python -m sphinx -b html docs docs/_build/html 2>&1 | tee /tmp/sphinx.log
+          touch docs/_build/html/.nojekyll
+          rm -rf docs/_build/html/.doctrees docs/_build/doctrees
+
+      - name: Fail on content-loss warnings
+        # sphinx-build exits 0 even when an extension quietly fails to pull in
+        # content, so the exit code alone is not a sufficient check.
+        run: |
+          n=$(grep -cE "WARNING: (autodoc|Unable to|Problems with|dot command|toctree contains reference to nonexisting)" /tmp/sphinx.log || true)
+          if [ "$n" -gt 0 ]; then
+            echo "::error::$n Sphinx content warnings -- pages would ship incomplete"
+            grep -E "WARNING:" /tmp/sphinx.log | head -10
+            exit 1
+          fi
+          echo "OK: no content-loss warnings"
+          echo "generated pages: $(find docs/_build/html -name '*.html' | wc -l)"
+
+      - name: Check the UVM reference is live
+        # If the UVM sources were missing, examples/uvm.html still builds -- as a
+        # short guide page. Only a size check distinguishes that from the real
+        # reference, and shipping the guide by accident is the failure this
+        # whole job exists to prevent.
+        run: |
+          f=docs/_build/html/examples/uvm.html
+          [ -f "$f" ] || { echo "::error::missing $f"; exit 1; }
+          bytes=$(wc -c < "$f")
+          if [ "$bytes" -lt 50000 ]; then
+            echo "::error::$f is only ${bytes} bytes -- the UVM sources did not reach the build"
+            exit 1
+          fi
+          echo "OK: examples/uvm.html (${bytes} bytes)"
+          test -d docs/_build/html/_images || { echo "::error::no diagrams were rendered"; exit 1; }
+
+      - name: Upload docs
+        # Consumed by the host-side docs staging poller; the artifact name follows
+        # the <org>-<repo> convention that design depends on.
+        uses: forgejo/upload-artifact@v4
+        with:
+          name: docs-fvutils-sphinx-systemverilog
+          path: docs/_build/html/**
+          if-no-files-found: error
+
   publish-pypi:
     # Releases only. A version number on PyPI can be yanked but never reused.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, docs]
     runs-on: ubuntu-latest
 
     steps:

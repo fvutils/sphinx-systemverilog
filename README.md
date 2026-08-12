@@ -8,8 +8,8 @@
 
 **A Sphinx autodoc extension for SystemVerilog, powered by [`pyslang`](https://github.com/MikePopoloski/slang).**
 
-[![CI](https://github.com/fvutils/sphinx-systemverilog/actions/workflows/ci.yml/badge.svg)](https://github.com/fvutils/sphinx-systemverilog/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-fvutils.github.io-38BDF8)](https://fvutils.github.io/sphinx-systemverilog/)
+[![Docs](https://img.shields.io/badge/docs-dvkit.org-38BDF8)](https://dvkit.org/fvutils/sphinx-systemverilog/)
+[![Source](https://img.shields.io/badge/source-git.dvkit.org-6366F1)](https://git.dvkit.org/fvutils/sphinx-systemverilog)
 [![PyPI](https://img.shields.io/pypi/v/sphinx-systemverilog?color=0EA5A4)](https://pypi.org/project/sphinx-systemverilog/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pyslang.readthedocs.io/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-FBBF24)](LICENSE)
@@ -23,7 +23,7 @@ It documents SystemVerilog source the way `sphinx.ext.autodoc` documents Python:
 and their doc comments are pulled directly from source, supporting multiple comment dialects
 (a Python-docstring-like *native* style, NaturalDocs, and Doxygen).
 
-📖 **Documentation:** <https://fvutils.github.io/sphinx-systemverilog/>
+📖 **Documentation:** <https://dvkit.org/fvutils/sphinx-systemverilog/>
 
 > **Status:** early development. See `docs/design/` for the design and implementation plan.
 

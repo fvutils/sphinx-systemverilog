@@ -57,12 +57,16 @@ html_static_path = ["_static"]
 # conf dir and Sphinx copies them into the build).
 html_logo = "../assets/icons/png/logo-horizontal.png"
 html_favicon = "../assets/icons/favicon.ico"
+# git.dvkit.org is the authoritative source, so the sidebar links there rather
+# than using alabaster's GitHub button: the GitHub repo is a downstream mirror.
 html_theme_options = {
     "description": "Sphinx autodoc for SystemVerilog, powered by pyslang",
-    "github_user": "fvutils",
-    "github_repo": "sphinx-systemverilog",
-    "github_button": True,
+    "github_button": False,
     "logo_name": False,
+    "extra_nav_links": {
+        "Source (git.dvkit.org)": "https://git.dvkit.org/fvutils/sphinx-systemverilog",
+        "PyPI": "https://pypi.org/project/sphinx-systemverilog/",
+    },
 }
 
 myst_enable_extensions = ["colon_fence", "deflist"]
