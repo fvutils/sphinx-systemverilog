@@ -14,6 +14,7 @@ copyright = "2026, Matthew Ballance"
 
 extensions = [
     "myst_parser",
+    "sphinx_rtd_theme",
     "sphinx_systemverilog",
 ]
 
@@ -50,23 +51,23 @@ source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "design"]
 master_doc = "index"
 
-html_theme = "alabaster"
+# sphinx_rtd_theme rather than alabaster: the persistent left-hand navigation is
+# what makes a 15-page generated reference usable, and it is what pyhdl-if -- the
+# other project publishing SystemVerilog docs through this extension -- uses, so
+# the two doc sets read as one family.
+html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
 # Branding (shared icon set lives in ../assets/icons; paths are relative to this
-# conf dir and Sphinx copies them into the build).
-html_logo = "../assets/icons/png/logo-horizontal.png"
+# conf dir and Sphinx copies them into the build).  The rtd sidebar is narrow and
+# dark, so it gets the dark-background horizontal logo rather than the light one.
+html_logo = "../assets/icons/png/logo-horizontal-dark.png"
 html_favicon = "../assets/icons/favicon.ico"
-# git.dvkit.org is the authoritative source, so the sidebar links there rather
-# than using alabaster's GitHub button: the GitHub repo is a downstream mirror.
 html_theme_options = {
-    "description": "Sphinx autodoc for SystemVerilog, powered by pyslang",
-    "github_button": False,
-    "logo_name": False,
-    "extra_nav_links": {
-        "Source (git.dvkit.org)": "https://git.dvkit.org/fvutils/sphinx-systemverilog",
-        "PyPI": "https://pypi.org/project/sphinx-systemverilog/",
-    },
+    "logo_only": True,
+    "collapse_navigation": False,   # keep the UVM sub-pages reachable in one click
+    "navigation_depth": 2,
+    "style_external_links": True,
 }
 
 myst_enable_extensions = ["colon_fence", "deflist"]

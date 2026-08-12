@@ -26,8 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "beautifulsoup4"]
-docs = ["myst-parser"]
-dev = ["pytest>=8.0", "beautifulsoup4", "myst-parser"]
+docs = ["myst-parser", "sphinx-rtd-theme>=2.0"]
+dev = ["pytest>=8.0", "beautifulsoup4", "myst-parser", "sphinx-rtd-theme>=2.0"]
 
 # git.dvkit.org is the authoritative source; dvkit.org serves the documentation. Any
 # GitHub presence is a downstream mirror and is deliberately not advertised here.

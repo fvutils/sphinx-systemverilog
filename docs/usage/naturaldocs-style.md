@@ -48,6 +48,36 @@ marker is simply stripped). To omit those blocks instead:
 sv_naturaldocs_nodocs = "skip"
 ```
 
+## Parameter and return sections
+
+A section header on a line of its own is lifted out of the prose and rendered as
+a field list, the same shape Doxygen's `@param`/`@return` and Python docstrings
+produce:
+
+```systemverilog
+// Function: m_do_open
+//
+// Initializes the state of the stream.
+//
+// Parameters:
+// db - Database which the stream belongs to
+// scope - Optional scope
+//
+// Returns:
+// The opened stream.
+```
+
+Recognized headers are `Parameters`/`Arguments`/`Args`, `Returns`/`Return`,
+`Throws` and `See Also`. The separator may be a colon or a dash, and the UVM
+`-- NODOCS --` marker is allowed in the header (`Parameters -- NODOCS --`).
+Each parameter entry is `name - description`; a line that does not parse as an
+entry stays in the prose rather than being guessed at.
+
+The section runs to the next blank line. Note that this is a *header on its own
+line* — an ordinary sentence such as "Returns the name of the object" is prose
+and is left alone, which matters because UVM has 236 of those and only two real
+`Returns:` sections.
+
 ## Inline markup
 
 | NaturalDocs | Rendered as |

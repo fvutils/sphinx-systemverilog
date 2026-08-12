@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from .base import DocstringParser, ParsedDoc, register_parser
+from .base import DocField, DocstringParser, ParsedDoc, register_parser
 from .inline import collect_angle_xrefs, convert_inline
 from .sanitize import sanitize_prose
 
@@ -47,6 +47,82 @@ _HEADER_RE = re.compile(
     """,
     re.VERBOSE,
 )
+
+
+# A NaturalDocs section header on a line of its own: ``Parameters:``,
+# ``Returns:``, ``Parameters-``, ``Parameters -- NODOCS --``.  UVM writes all
+# four spellings, so the separator and the NODOCS marker are both optional.
+_SECTION_RE = re.compile(
+    r"""^\s*
+        (?P<kw>Parameters|Params|Arguments|Args|Returns|Return|Throws|See\ Also|See)
+        \s*(?:-+\s*NODOCS\s*-+)?
+        \s*[:\-]*\s*$
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+#: Section keyword -> the ParsedDoc field kind it produces.
+_SECTION_KINDS = {
+    "parameters": "param", "params": "param",
+    "arguments": "param", "args": "param",
+    "returns": "returns", "return": "returns",
+    "throws": "throws",
+    "see also": "see", "see": "see",
+}
+
+# One entry of a parameter section: ``name - description``.  The separator must
+# be surrounded by whitespace so a hyphenated first word is not mistaken for one.
+_PARAM_ENTRY_RE = re.compile(r"^(?P<name>[\w:$.\[\]]+)\s+[-:]\s+(?P<desc>\S.*)$")
+
+
+def extract_sections(text: str) -> tuple[str, list[DocField]]:
+    """Split ND ``Parameters:``/``Returns:`` sections out of *text*.
+
+    Returns the prose that remains and the fields harvested from the sections.
+    A section runs from its header to the next blank line, which is how the
+    convention is written in practice; anything that does not parse as an entry
+    is left in the prose rather than guessed at.
+    """
+    lines = text.splitlines()
+    kept: list[str] = []
+    fields: list[DocField] = []
+    i = 0
+    while i < len(lines):
+        match = _SECTION_RE.match(lines[i])
+        if not match:
+            kept.append(lines[i])
+            i += 1
+            continue
+
+        kind = _SECTION_KINDS[match.group("kw").lower().replace("  ", " ")]
+        i += 1
+        block: list[str] = []
+        while i < len(lines) and lines[i].strip():
+            block.append(lines[i].strip())
+            i += 1
+
+        if not block:
+            continue
+        if kind == "param":
+            unparsed: list[str] = []
+            for entry in block:
+                entry_match = _PARAM_ENTRY_RE.match(entry)
+                if entry_match:
+                    fields.append(DocField(
+                        kind="param",
+                        name=entry_match.group("name"),
+                        body=entry_match.group("desc").strip(),
+                    ))
+                elif fields and not unparsed:
+                    # A stray line after entries continues the last description.
+                    fields[-1].body = (fields[-1].body + " " + entry).strip()
+                else:
+                    unparsed.append(entry)
+            if unparsed:
+                kept.extend(unparsed)
+        else:
+            fields.append(DocField(kind=kind, name=None, body=" ".join(block)))
+    return "\n".join(kept), fields
 
 
 class NaturalDocsHeader:
@@ -125,12 +201,16 @@ class NaturalDocsParser(DocstringParser):
         # Repair prose structure (banner rules, aligned continuation lines)
         # before inline conversion, so escaping sees final line content.
         body_text = convert_inline(sanitize_prose("\n".join(lines))).strip("\n")
+        # ``Parameters:``/``Returns:`` sections become structured fields, which
+        # render as a field list rather than as another paragraph of prose.
+        body_text, fields = extract_sections(body_text)
+        body_text = body_text.strip("\n")
         para = _first_paragraph(body_text)
         summary = " ".join(p.strip() for p in para.splitlines()).strip()
         rest = body_text[len(para):].strip("\n")
 
         xrefs = collect_angle_xrefs("\n".join(lines))
-        return ParsedDoc(summary=summary, body=rest, fields=[], xrefs=xrefs)
+        return ParsedDoc(summary=summary, body=rest, fields=fields, xrefs=xrefs)
 
     def matches(self, raw: str) -> bool:
         return parse_header(raw) is not None

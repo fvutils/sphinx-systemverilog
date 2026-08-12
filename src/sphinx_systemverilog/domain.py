@@ -16,6 +16,7 @@ from sphinx.directives import ObjectDescription
 from sphinx.domains import Domain, ObjType
 from sphinx.roles import XRefRole
 from sphinx.util import logging
+from sphinx.util.docfields import Field, GroupedField, TypedField
 from sphinx.util.nodes import make_refnode
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,38 @@ class SvObjectDescription(ObjectDescription):
 
     #: The object kind (set per subclass); matches OBJECT_TYPES keys.
     object_kind = "obj"
+
+    #: Field handling, mirroring the Python domain.  Without this, ``:param x:``
+    #: renders as a bare docutils field ("Param x:") rather than being collected
+    #: under a single "Parameters" heading, and every dialect that produces
+    #: fields -- Doxygen ``@param``, NaturalDocs ``Parameters:`` -- looks
+    #: unstructured next to the rest of a Sphinx doc set.
+    doc_field_types = [
+        TypedField(
+            "parameter",
+            label="Parameters",
+            names=("param", "parameter", "arg", "argument"),
+            typerolename="obj",
+            typenames=("paramtype", "type"),
+            can_collapse=True,
+        ),
+        Field(
+            "returnvalue", label="Returns", has_arg=False,
+            names=("returns", "return"),
+        ),
+        Field(
+            "returntype", label="Return type", has_arg=False,
+            names=("rtype",),
+        ),
+        GroupedField(
+            "throws", label="Throws", names=("throws", "throw", "exception"),
+            can_collapse=True,
+        ),
+        GroupedField(
+            "seealso", label="See also", names=("see", "seealso"),
+            can_collapse=True,
+        ),
+    ]
 
     def handle_signature(self, sig: str, signode: addnodes.desc_signature) -> str:
         """Parse a signature into nodes and return the lookup name.

@@ -15,6 +15,9 @@ package:
     # Doc toolchain: MyST for Markdown narrative docs.
     - name: myst-parser
       src: pypi
+    # Doc theme: the published doc set renders with the RTD theme.
+    - name: sphinx-rtd-theme
+      src: pypi
     # Test helper: HTML assertions in sphinx integration tests.
     - name: beautifulsoup4
       src: pypi
