@@ -14,6 +14,7 @@ with NaturalDocs and Doxygen on the roadmap.
 
 getting-started
 usage/directives
+usage/signatures
 usage/native-style
 usage/naturaldocs-style
 usage/doxygen-style
@@ -35,10 +36,13 @@ examples/uvm
 
 ## Status
 
-Phases 1 and 2 are implemented: the `native` and `naturaldocs` dialects,
-classes/packages/modules (with ports & parameters), the core domain + autodoc
-machinery, inheritance diagrams, and dialect auto-detection. See the design and
-implementation plan under `docs/design/` in the repository.
+All planned phases (1–5) are implemented: the `native`, `naturaldocs` and
+`doxygen` dialects with auto-detection, classes/packages/modules (with ports &
+parameters), the core domain + autodoc machinery, inheritance and instance
+diagrams, whole-tree documentation, and — as of Phase 5 — structured signature
+rendering with parameter lists, automatic type cross-links, and objects in the
+table of contents. See the design and implementation plan under `docs/design/`
+in the repository.
 
 ## Indices
 

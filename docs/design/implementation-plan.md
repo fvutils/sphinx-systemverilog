@@ -1,11 +1,27 @@
 # sphinx-systemverilog — Implementation, Test & Doc Plan
 
-**Status:** Living tracker — **all phases complete (Milestone 0 through Phase 4)** (2026-06-28)
-**Date:** 2026-06-28
+**Status:** Living tracker — **all phases complete (Milestone 0 through Phase 5)** (2026-08-12)
+**Date:** 2026-06-28 (last updated 2026-08-12)
 **Companion to:** `docs/design/sphinx-systemverilog-design.md`
 **Purpose:** Turn the approved design into a concrete, trackable build plan. Every work item has an ID (`P<phase>-<area>-<n>`), an owner-checkable box, and a defined "done" condition. Implementation, tests, and docs are planned *together* per phase — a phase is not "done" until all three are.
 
 ### Progress log
+
+- **2026-08-12** — **Phase 5 complete: signature rendering & navigation.**
+  Migrating `fvutils/pyhdl-if` off Doxygen/Breathe surfaced three presentation
+  gaps (see `docs/design/signature-rendering-plan.md`): documented objects
+  produced **no** TOC entries, argument lists rendered as one opaque
+  `desc_addname` string, and no type in a signature was clickable. All three are
+  closed. Objects now appear in the sidebar (`sv_fullname` is stashed in
+  `handle_signature`, because Sphinx calls `_object_hierarchy_parts()` *before*
+  the target ids exist), arguments are real `desc_parameterlist`/`desc_parameter`
+  nodes parsed with a bracket- and string-aware splitter, and return types,
+  argument types, property types and `extends` bases resolve to links. Built-in
+  types are never looked up, and unresolvable inferred references degrade to
+  plain text silently. Any signature the parser cannot read falls back to the
+  previous rendering — parsing never fails a build. **236 tests pass**; docs
+  build clean under `-W`. Downstream (`pyhdl-if`): 41/108 symbols unchanged, 0 →
+  36 sidebar entries, 0 → 30 `sig-param` nodes, no new warnings.
 
 - **2026-06-29** — **Phase-2 gap closed: `P2-DOC-4` published UVM doc set.**
   The earlier Phase-2 work substituted the *published* UVM reference with a prose
@@ -300,6 +316,7 @@
 | P2 NaturalDocs + UVM | ✅ | ✅ | ✅ | `P2-ACC` ✅ | **done** (2026-06-28) |
 | P3 Doxygen + whole-tree | ✅ | ✅ | ✅ | `P3-ACC` ✅ | **done** (2026-06-28) |
 | P4 Scale/UX | ✅ | ✅ | ✅ | — | **done** (2026-06-28) |
+| P5 Signatures & nav | ✅ | ✅ | ✅ | `P5-TEST-11` ✅ | **done** (2026-08-12) |
 
 > Update this table and the per-item boxes as work lands; append PR/commit refs next to checked items.
 

@@ -6,6 +6,7 @@ into.  It owns cross-reference resolution and the per-build object inventory.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 from docutils import nodes
@@ -64,10 +65,17 @@ class SvObjectDescription(ObjectDescription):
         whole signature when it is a bare identifier.
         """
         qualifiers = self.options.get("qualifiers", "")
-        if self.options.get("virtual"):
+        # ``virtual`` is a flag option, so docutils stores None when it is
+        # *present*; test for membership, not truthiness.
+        if "virtual" in self.options:
             qualifiers = ("virtual " + qualifiers).strip()
 
         name = _signature_name(sig, self.object_kind)
+        # Stash the resolved name for the TOC hooks: Sphinx calls
+        # ``_object_hierarchy_parts()`` before ``add_target_and_index()`` has
+        # populated ``names``/``ids``, so those are still empty at that point.
+        signode["sv_fullname"] = self._fullname(name)
+        signode["sv_kind"] = self.object_kind
 
         if qualifiers:
             signode += addnodes.desc_annotation(
@@ -82,26 +90,64 @@ class SvObjectDescription(ObjectDescription):
         if self.object_kind in _DATA_KINDS:
             type_part, tail = _split_data_signature(sig, name)
             if type_part:
-                signode += addnodes.desc_annotation(
-                    type_part + " ", type_part + " "
-                )
+                signode += _type_node(type_part, self.env)
+                signode += addnodes.desc_sig_space()
             signode += addnodes.desc_name(name, name)
             if tail:
-                signode += addnodes.desc_annotation(" " + tail, " " + tail)
+                # Dimensions bind to the name; anything else is set off by a space.
+                sep = "" if tail.startswith("[") else " "
+                signode += addnodes.desc_annotation(sep + tail, sep + tail)
         else:
+            return_type = _signature_return(sig, name, self.object_kind)
+            if return_type:
+                signode += _type_node(return_type, self.env)
+                signode += addnodes.desc_sig_space()
             signode += addnodes.desc_name(name, name)
-            extra = _signature_extra(sig, name, self.object_kind)
-            if extra:
-                signode += addnodes.desc_addname(extra, extra)
+            self._add_arglist(sig, name, signode)
 
         extends = self.options.get("extends")
         if extends:
-            signode += addnodes.desc_annotation(
-                "  extends " + extends, "  extends " + extends
-            )
+            signode += addnodes.desc_annotation("  extends ", "  extends ")
+            signode += _type_xref(extends, self.env)
 
         self._add_source_link(signode)
         return name
+
+    def _add_arglist(
+        self, sig: str, name: str, signode: addnodes.desc_signature
+    ) -> None:
+        """Render the argument list as a real parameter list where possible.
+
+        A signature the parser does not understand falls back to the opaque
+        string it used to emit: losing the per-parameter markup costs polish,
+        never content (D2).
+        """
+        if self.object_kind not in ("function", "task"):
+            return
+        args = _parse_arglist(sig)
+        if args is None:
+            extra = _signature_extra(sig, name, self.object_kind)
+            if extra:
+                signode += addnodes.desc_addname(extra, extra)
+            return
+
+        paramlist = addnodes.desc_parameterlist()
+        for arg in args:
+            node = _argument_node(arg, self.env)
+            if node is None:
+                # One unparseable argument invalidates the whole list, or the
+                # rendering would silently drop it.
+                extra = _signature_extra(sig, name, self.object_kind)
+                if extra:
+                    signode += addnodes.desc_addname(extra, extra)
+                return
+            paramlist += node
+        signode += paramlist
+
+    def _fullname(self, name: str) -> str:
+        """``module::name``, the key used for the anchor and the TOC entry."""
+        module = self.options.get("module")
+        return f"{module}::{name}" if module else name
 
     def _add_source_link(self, signode: addnodes.desc_signature) -> None:
         source = self.options.get("source")
@@ -120,8 +166,7 @@ class SvObjectDescription(ObjectDescription):
     def add_target_and_index(
         self, name: str, sig: str, signode: addnodes.desc_signature
     ) -> None:
-        module = self.options.get("module")
-        fullname = f"{module}::{name}" if module else name
+        fullname = self._fullname(name)
         anchor = "sv-" + fullname.replace("::", "-")
         if anchor not in self.state.document.ids:
             signode["names"].append(fullname)
@@ -144,14 +189,39 @@ class SvObjectDescription(ObjectDescription):
                 ("single", f"{name} ({label})", anchor, "", None)
             )
 
-    def _object_hierarchy_parts(self, sig_node):
-        if "names" in sig_node and sig_node["names"]:
-            return tuple(sig_node["names"][0].split("::"))
-        return ()
+    def _object_hierarchy_parts(self, sig_node) -> tuple[str, ...]:
+        fullname = sig_node.get("sv_fullname")
+        if not fullname:
+            # Hand-built signodes (or a subclass that skipped handle_signature)
+            # may only have the target names Sphinx assigned later.
+            names = sig_node.get("names") or []
+            fullname = names[0] if names else ""
+        return tuple(p for p in fullname.split("::") if p)
 
     def _toc_entry_name(self, sig_node) -> str:
-        if sig_node.get("_toc_parts"):
-            return sig_node["_toc_parts"][-1]
+        parts = sig_node.get("_toc_parts") or ()
+        if not parts:
+            return ""
+
+        config = self.env.config
+        parens = ""
+        if config.add_function_parentheses and sig_node.get("sv_kind") in (
+            "function", "task"
+        ):
+            parens = "()"
+
+        *parents, name = parts
+        mode = config.toc_object_entries_show_parents
+        if mode == "domain":
+            # The domain decides how much to show.  Mirroring the Python
+            # domain, that is the name qualified by its enclosing declarations
+            # but *not* by the package -- the package is the SV analogue of a
+            # Python module, and it heads the parts tuple.
+            return "::".join([*parents[1:], name + parens])
+        if mode == "hide":
+            return name + parens
+        if mode == "all":
+            return "::".join([*parents, name + parens])
         return ""
 
 
@@ -279,9 +349,12 @@ def _signature_name(sig: str, kind: str) -> str:
         head = sig.split("(", 1)[0]
         return head.split()[-1] if head.split() else sig
     if kind in _DATA_KINDS:
-        # '<type> ... <name> [= default]' -> last token before any '='.
+        # '<type> ... <name>[dims] [= default]' -> last token before any '=',
+        # minus any unpacked dimensions, which belong to the declarator rather
+        # than to the name used for lookup and indexing.
         head = sig.split("=", 1)[0].strip()
-        return head.split()[-1] if head.split() else sig
+        last = head.split()[-1] if head.split() else sig
+        return last.split("[", 1)[0] or last
     return sig.split()[0] if sig.split() else sig
 
 
@@ -291,11 +364,236 @@ def _signature_extra(sig: str, name: str, kind: str) -> str:
     return ""
 
 
+def _signature_return(sig: str, name: str, kind: str) -> str:
+    """Extract a function's return type from ``function <type> <name>(...)``.
+
+    Tasks have no return type.  The leading ``function`` keyword is dropped -
+    the kind label already supplies it - as are any qualifiers that a
+    hand-written signature happens to carry inline (they are rendered from the
+    ``:virtual:`` / ``:qualifiers:`` options instead).
+    """
+    if kind != "function":
+        return ""
+    head = sig.split("(", 1)[0].strip()
+    tokens = head.split()
+    if len(tokens) < 2 or tokens[-1] != name:
+        return ""
+    middle = [t for t in tokens[:-1] if t not in _SIGNATURE_LEADERS]
+    return " ".join(middle)
+
+
+#: Words that may lead a hand-written subroutine signature but are not part of
+#: the return type.
+_SIGNATURE_LEADERS = frozenset(
+    {"function", "task", "virtual", "static", "pure", "extern",
+     "local", "protected"}
+)
+
+
+#: Leading keywords of an argument declaration that state how it is passed
+#: rather than what its type is.
+_ARG_DIRECTIONS = ("input", "output", "inout", "ref", "const", "var")
+
+_OPENERS = "([{"
+_CLOSERS = ")]}"
+
+
+def _split_top_level(text: str, sep: str) -> list[str] | None:
+    """Split *text* on *sep*, ignoring separators nested in brackets or strings.
+
+    Returns ``None`` if the brackets do not balance -- a naive ``split(",")``
+    would mangle a default like ``'{1, 2}`` into two arguments.
+    """
+    parts: list[str] = []
+    depth = 0
+    in_string = False
+    current: list[str] = []
+    escaped = False
+    for ch in text:
+        if in_string:
+            current.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in _OPENERS:
+            depth += 1
+        elif ch in _CLOSERS:
+            depth -= 1
+            if depth < 0:
+                return None
+        elif ch == sep and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    if depth != 0 or in_string:
+        return None
+    parts.append("".join(current))
+    return parts
+
+
+def _parse_arglist(sig: str) -> list[str] | None:
+    """The argument texts of ``... name(a, b = '{1, 2})``, or ``None``.
+
+    ``None`` means "do not understand this" -- an empty list means a genuine
+    zero-argument subroutine, and the two must not be confused.
+    """
+    start = sig.find("(")
+    if start < 0 or not sig.rstrip().endswith(")"):
+        return None
+    inner = sig.rstrip()[start + 1 : -1]
+    parts = _split_top_level(inner, ",")
+    if parts is None:
+        return None
+    if len(parts) == 1 and not parts[0].strip():
+        return []
+    if any(not p.strip() for p in parts):
+        return None
+    return [p.strip() for p in parts]
+
+
+def _parse_argument(text: str) -> tuple[str, str, str, str, str] | None:
+    """Split one argument into ``(direction, type, name, dims, default)``.
+
+    ``None`` if it does not look like a declaration at all.
+    """
+    head, sep, default = "", "", ""
+    split = _split_top_level(text, "=")
+    if split is None:
+        return None
+    if len(split) == 2:
+        head, sep, default = split[0], "=", split[1]
+    elif len(split) == 1:
+        head = split[0]
+    else:
+        return None
+
+    tokens = head.split()
+    direction: list[str] = []
+    while tokens and tokens[0] in _ARG_DIRECTIONS:
+        direction.append(tokens.pop(0))
+    # Unpacked dimensions may be written apart from the declarator
+    # (``bit [7:0] q [3]``); either way they bind to the name.
+    trailing: list[str] = []
+    while tokens and tokens[-1].startswith("["):
+        trailing.insert(0, tokens.pop())
+    if not tokens:
+        return None
+    declarator = tokens.pop()
+    name, bracket, rest = declarator.partition("[")
+    dims = (bracket + rest if bracket else "") + "".join(trailing)
+    if not _IDENTIFIER.match(name):
+        return None
+    return (
+        " ".join(direction),
+        " ".join(tokens),
+        name,
+        dims,
+        default.strip() if sep else "",
+    )
+
+
+def _type_node(text: str, env: Any) -> nodes.Node:
+    """Render a type as a cross-reference where one is possible."""
+    node = _type_xref(text, env)
+    if isinstance(node, nodes.Text):
+        return addnodes.desc_sig_keyword_type(text, text)
+    return node
+
+
+def _argument_node(text: str, env: Any) -> addnodes.desc_parameter | None:
+    parsed = _parse_argument(text)
+    if parsed is None:
+        return None
+    direction, type_text, name, dims, default = parsed
+    param = addnodes.desc_parameter()
+    if direction:
+        param += addnodes.desc_sig_keyword(direction, direction)
+        param += addnodes.desc_sig_space()
+    if type_text:
+        param += _type_node(type_text, env)
+        param += addnodes.desc_sig_space()
+    param += addnodes.desc_sig_name(name, name)
+    if dims:
+        param += addnodes.desc_sig_punctuation(dims, dims)
+    if default:
+        param += addnodes.desc_sig_space()
+        param += addnodes.desc_sig_operator("=", "=")
+        param += addnodes.desc_sig_space()
+        param += nodes.inline(default, default, classes=["default_value"])
+    return param
+
+
+#: SystemVerilog built-in types and type qualifiers.  These are keywords, not
+#: documented objects, so a signature must not emit a cross-reference for them:
+#: it would put an unresolvable node in nearly every signature.
+_BUILTIN_TYPES = frozenset(
+    {
+        "bit", "logic", "reg", "byte", "shortint", "int", "longint", "integer",
+        "time", "real", "shortreal", "realtime", "string", "chandle", "event",
+        "void", "signed", "unsigned", "var", "wire", "genvar", "supply0",
+        "supply1", "tri", "wand", "wor", "type",
+    }
+)
+
+_IDENTIFIER = re.compile(r"^[A-Za-z_]\w*(::[A-Za-z_]\w*)*$")
+
+
+def _xref_target(text: str) -> str:
+    """The name to resolve for a type in a signature, or ``""`` for none.
+
+    Packed dimensions and parameterization are stripped before the check
+    (``logic[7:0]`` resolves ``logic``, which the built-in filter then drops);
+    anything that is not a plain identifier is left as text.
+    """
+    target = text.split("[", 1)[0].split("#", 1)[0].strip()
+    if not target or target in _BUILTIN_TYPES:
+        return ""
+    return target if _IDENTIFIER.match(target) else ""
+
+
+def _type_xref(text: str, env: Any) -> nodes.Node:
+    """A type reference node for *text*, or a plain text node if it is not one.
+
+    The reference is *inferred* rather than author-written, so it uses the
+    generic ``obj`` reftype, which the domain resolves silently: an undocumented
+    type degrades to plain text instead of warning.
+    """
+    target = _xref_target(text)
+    if not target:
+        return nodes.Text(text)
+    node = addnodes.pending_xref(
+        "",
+        nodes.Text(text),
+        refdomain="sv",
+        reftype="obj",
+        reftarget=target,
+        refexplicit=False,
+        refwarn=False,
+    )
+    node["refdoc"] = env.docname
+    return node
+
+
 def _split_data_signature(sig: str, name: str) -> tuple[str, str]:
-    """Split ``<type> <name> [= default]`` into (type_part, tail)."""
+    """Split ``<type> <name>[dims] [= default]`` into (type_part, tail).
+
+    Unpacked dimensions stay with the declarator, so they lead the tail and are
+    rendered flush against the name (``q[$]``, not ``q [$]``).
+    """
     sig = sig.strip()
     head, sep, default = sig.partition("=")
     tokens = head.split()
     type_part = " ".join(tokens[:-1]) if len(tokens) > 1 else ""
-    tail = ("= " + default.strip()) if sep else ""
+    declarator = tokens[-1] if tokens else ""
+    dims = declarator[declarator.index("["):] if "[" in declarator else ""
+    tail = dims
+    if sep:
+        tail = (tail + " = " + default.strip()).strip()
     return type_part, tail

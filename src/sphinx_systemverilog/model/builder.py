@@ -8,6 +8,7 @@ targets self-contained packages; Phase 2 adds include/define-driven elaboration.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 from .comments import clean_comment_block, split_leading_trivia
@@ -565,8 +566,8 @@ class ModelBuilder:
         return obj
 
     def _build_property(self, sym: Any, sm: Any, qname: str | None) -> SvObject:
-        type_str = str(getattr(sym, "type", "")) or ""
-        sig = f"{type_str} {sym.name}".strip()
+        type_str, dims = _split_unpacked(str(getattr(sym, "type", "")) or "")
+        sig = f"{type_str} {sym.name}{dims}".strip()
         obj = self._build_simple(sym, KIND_PROPERTY, sm, qname, signature=sig)
         if str(getattr(sym, "randMode", "")) in ("RandMode.Rand", "RandMode.RandC"):
             obj.qualifiers.append("rand")
@@ -742,14 +743,54 @@ def _subroutine_signature(sym: Any, is_task: bool) -> str:
     args = []
     for arg in getattr(sym, "arguments", []) or []:
         direction = _ARG_DIR.get(str(getattr(arg, "direction", "")), "")
-        atype = str(getattr(arg, "type", "")) or ""
-        piece = " ".join(p for p in (direction, atype, arg.name) if p)
+        atype, dims = _split_unpacked(str(getattr(arg, "type", "")) or "")
+        piece = " ".join(p for p in (direction, atype, arg.name + dims) if p)
+        default = _argument_default(arg)
+        if default:
+            piece += f" = {default}"
         args.append(piece)
     arglist = ", ".join(args)
     if is_task:
         return f"task {sym.name}({arglist})"
     ret = str(getattr(sym, "returnType", "")) or "void"
     return f"function {ret} {sym.name}({arglist})"
+
+
+def _split_unpacked(type_str: str) -> tuple[str, str]:
+    """Split slang's ``elem$[dim]`` notation into SV declaration order.
+
+    Slang renders unpacked dimensions inline and separated by ``$``
+    (``int$[$]``, ``byte$[]``, ``int$[string]``), which is not valid SV.  In
+    SystemVerilog the dimensions follow the *declarator*: ``int q[$]``.  Packed
+    dimensions carry no ``$`` and are already in the right place, so they are
+    left alone.
+
+    Returns ``(base_type, dimensions)``; ``dimensions`` is "" when there are no
+    unpacked dimensions.
+    """
+    if "$[" not in type_str:
+        return type_str, ""
+    base = type_str.split("$[", 1)[0]
+    dims = "".join(re.findall(r"\$(\[[^\]]*\])", type_str))
+    return base, dims
+
+
+def _argument_default(arg: Any) -> str:
+    """Source text of an argument's default value, or "" when it has none.
+
+    Slang wraps a default in an implicit conversion to the argument type, and
+    only the innermost expression carries syntax, so unwrap until something
+    with a syntax node appears.
+    """
+    expr = getattr(arg, "defaultValue", None)
+    for _ in range(8):  # bounded: guards against a cyclic/deep operand chain
+        if expr is None:
+            return ""
+        syntax = getattr(expr, "syntax", None)
+        if syntax is not None:
+            return " ".join(str(syntax).split())
+        expr = getattr(expr, "operand", None)
+    return ""
 
 
 _ARG_DIR = {

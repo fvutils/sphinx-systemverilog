@@ -52,6 +52,28 @@ Available object directives: `sv:package`, `sv:module`, `sv:interface`,
 `sv:program`, `sv:class`, `sv:function`, `sv:task`, `sv:property`, `sv:port`,
 `sv:parameter`, `sv:typedef`, `sv:macro`.
 
+See [how signatures are rendered](signatures.md) for what the domain does with
+the signature text and the options above.
+
+## Objects in the table of contents
+
+Documented objects become table-of-contents entries, so they appear in the
+sidebar and in a page-local `contents` directive, nested under the declaration
+that contains them. Sphinx's standard
+[`toc_object_entries`](https://www.sphinx-doc.org/en/master/usage/configuration.html#confval-toc_object_entries)
+and `toc_object_entries_show_parents` settings control this:
+
+| `toc_object_entries_show_parents` | Entry for `sig_pkg::sig_ops::seed` |
+|---|---|
+| `domain` (default) | `sig_ops::seed()` |
+| `hide` | `seed()` |
+| `all` | `sig_pkg::sig_ops::seed()` |
+
+The package heads the qualified name, so `domain` mode shows the enclosing class
+but not the package — the same shape the Python domain uses for modules. Set
+`add_function_parentheses = False` to drop the `()` from function and task
+entries, or `toc_object_entries = False` to suppress object entries entirely.
+
 ## Cross-reference roles
 
 Reference any documented object:
