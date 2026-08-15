@@ -36,6 +36,19 @@ def register_config(app: "Sphinx") -> None:
     app.add_config_value("sv_viewcode", True, "env", types=[bool])
     # Extract and document `\`define` macros.
     app.add_config_value("sv_document_macros", True, "env", types=[bool])
+    # Restrict the (lazy) instance-hierarchy walk to these top modules.
+    # Empty = every elaborated top.  Only consulted when a structural directive
+    # actually asks for the hierarchy.
+    app.add_config_value("sv_structure_tops", [], "env", types=[list])
+    # Ceiling on instances visited during a hierarchy walk; exceeding it reports
+    # truncation rather than letting a pathological generate loop hang a build.
+    app.add_config_value("sv_structure_max_instances", 20000, "env", types=[int])
+    # Default depth for ``sv:instance-tree``.  A real SoC tree is thousands of
+    # nodes, so the default shows the shape rather than the whole thing.
+    app.add_config_value("sv_instance_tree_depth", 3, "env", types=[int])
+    # Cap on instantiation sites listed by ``sv:used-by``; the elided count is
+    # always reported.  0 disables the cap.
+    app.add_config_value("sv_used_by_limit", 50, "env", types=[int])
 
 
 def validate_config(app: "Sphinx", config) -> None:
@@ -46,6 +59,19 @@ def validate_config(app: "Sphinx", config) -> None:
     from sphinx.util import logging
 
     logger = logging.getLogger(__name__)
+    for name, default, allow_zero in (
+        ("sv_structure_max_instances", 20000, False),
+        ("sv_instance_tree_depth", 3, False),
+        ("sv_used_by_limit", 50, True),      # 0 means "no cap"
+    ):
+        value = getattr(config, name, default)
+        floor = 0 if allow_zero else 1
+        if not isinstance(value, int) or isinstance(value, bool) or value < floor:
+            logger.warning(
+                "%s must be an integer >= %d, not %r; falling back to %d",
+                name, floor, value, default, type="systemverilog",
+            )
+            setattr(config, name, default)
     if config.sv_doc_style not in DOC_STYLES:
         logger.warning(
             "sv_doc_style %r is not one of %s; falling back to 'native'",

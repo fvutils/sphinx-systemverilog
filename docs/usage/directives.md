@@ -29,6 +29,32 @@ Each takes a qualified name as its argument:
 | `:member-order:` | `source` (default), `alpha`, or `groups`. |
 | `:doc-style:` | Override the dialect for this directive. |
 | `:optional:` | Skip silently (no warning) when the target is not in the index. Useful for pages that render the same whether optional sources are present. |
+| `:show-inheritance:` | (classes) Add an inheritance diagram. |
+| `:show-instances:` | (modules) Add the [instance tree](structure.md). |
+| `:show-used-by:` | (modules) Add the list of [instantiation sites](instantiated-by). |
+| `:show-parameters-used:` | (modules) Add the [parameter matrix](parameter-matrix). |
+
+The three `:show-*:` structural options each trigger a walk of the elaborated
+design and are off by default; see [Elaboration cost](advanced.md).
+
+## Structural directives
+
+These describe the *elaborated* design rather than any single file, and are
+documented in full under [Design structure](structure.md):
+
+| Directive | Renders |
+|---|---|
+| `sv:instance-tree` | A module's instantiation hierarchy, as a cross-linked text tree (or `:diagram:`). |
+| `sv:used-by` | Every site that instantiates a module, with parameters and source links. |
+| `sv:parameter-matrix` | The parameter values a module is actually elaborated at. |
+| `sv:instance-diagram` | A module-to-module Graphviz graph. |
+| `sv:inheritance-diagram` | A class hierarchy graph. |
+
+```rst
+.. sv:instance-tree:: soc
+   :depth: 2
+   :collapse:
+```
 
 ## Manual domain directives
 

@@ -75,3 +75,32 @@ def test_groups_assigned(uvm_index):
     groups = {c.group for c in obj.children if c.group}
     assert "Seeding" in groups
     assert "Identification" in groups
+
+
+@requires_uvm
+def test_a_class_library_pays_nothing_for_structure(uvm_index):
+    """M2-TEST-7 (adapted): the lazy-elaboration contract at corpus scale.
+
+    UVM is ~5700 objects and the largest thing this project indexes, so it is
+    the right place to prove that a project with no structural directive is
+    never charged for the hierarchy walk.
+
+    The plan called for an instance-tree corpus test over "a real design
+    corpus".  There isn't one: UVM is a class library with no module hierarchy
+    at all, so a structural assertion over it would assert nothing.  The
+    valuable claim about UVM is the negative one below.
+    """
+    provider = uvm_index.structure_provider
+    assert provider is not None
+    assert provider.computed is False
+
+
+@requires_uvm
+def test_uvm_has_no_instance_hierarchy_to_walk(uvm_index):
+    """And when something does ask, the answer is honestly empty, not a crash."""
+    structure = uvm_index.structure
+
+    assert structure is not None
+    assert structure.tops == []
+    assert structure.edges == {}
+    assert structure.truncated is False

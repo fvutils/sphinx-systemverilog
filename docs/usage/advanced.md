@@ -38,16 +38,67 @@ comments.
 ## Structural instance diagrams
 
 For RTL designs, `sv:instance-diagram` renders a module's instantiation
-hierarchy (which module instantiates which), using the elaborated design:
+hierarchy from the elaborated design. See [Diagrams](diagrams.md) for what it
+covers, and [Elaboration cost](elaboration-cost) below for what it costs.
 
-```rst
-.. sv:instance-diagram:: rtl_top
+(elaboration-cost)=
+## Elaboration cost
+
+Parsing SystemVerilog is cheap. **Walking the instance hierarchy is not** — and
+the two are easy to confuse, because both are "using the parser".
+
+Measured against a synthetic design of 4680 instances:
+
+| Step | Cost |
+|---|---|
+| Parse every file, resolve declarations, build the index | ~0.002 s |
+| Walk the elaborated instance hierarchy | ~0.6 s |
+
+The gap widens with design size, because the hierarchy is what multiplies: a
+generate loop is one line of source and a thousand instances.
+
+So the hierarchy is walked **only when something asks for it**:
+
+- Building the index never walks it, no matter how large the design.
+- The first structural directive on any page triggers the walk.
+- Every later structural directive, on any page, reuses that one walk.
+- A project that documents only classes and packages — a verification library,
+  say — never pays any of it.
+
+If no page in your project uses a structural directive, the cost is zero. You do
+not need to configure anything to get that; it is the default.
+
+### When a large design is still too slow
+
+Two escape hatches, both applying only to the walk:
+
+```python
+# Only elaborate these tops (default: every elaborated top).
+sv_structure_tops = ["soc_top"]
+
+# Stop walking after this many instances (default: 20000).
+sv_structure_max_instances = 20000
 ```
 
-Edges are labeled with the instance name; the target module is highlighted.
-Like inheritance diagrams, this needs Graphviz's `dot` and degrades gracefully
-without it. The directive only works for modules that participate in an
-elaborated hierarchy (a top-level design module and its children).
+Hitting the instance ceiling is always reported, never silent: the diagram
+renders what was walked and the build warns that it was truncated. Prefer
+narrowing `sv_structure_tops` over raising the ceiling — a testbench top that
+pulls in the whole DUT is usually not the thing you meant to diagram.
+
+### Incremental and parallel builds
+
+The elaborated design cannot be stored in Sphinx's cached environment, so it is
+recomputed in whichever process needs it, and only there:
+
+- On an **incremental rebuild**, unchanged pages reuse their cached doctrees, so
+  structural directives do not re-run and nothing is walked.
+- Under **parallel builds** (`-j`), each worker that renders a structural
+  directive walks independently. Workers that render none walk nothing. This is
+  a deliberate trade: sharing the elaborated design across processes would cost
+  more than recomputing it.
+
+If a structural directive ever reports that the elaborated design is
+unavailable, a full rebuild (`sphinx-build -E`) restores it.
 
 ## Performance
 

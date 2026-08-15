@@ -12,6 +12,24 @@ pytest_plugins = ["sphinx.testing.fixtures"]
 #: Directory holding hand-written SystemVerilog fixtures.
 FIXTURES = Path(__file__).parent / "fixtures" / "sv"
 
+#: A small but structurally complete RTL design: generate loops, if-generate
+#: branches, instance arrays and the same module elaborated at two widths.
+#: Kept out of ``FIXTURES`` so it does not perturb the tests that index the
+#: whole fixture directory.
+DESIGN = Path(__file__).parent / "fixtures" / "design"
+
+#: A deliberately large elaboration (4680 instances from 29 lines) used to
+#: exercise the instance budget and to show how far index cost and walk cost
+#: diverge.
+DEEP = Path(__file__).parent / "fixtures" / "deep"
+
+#: A design with structurally identical siblings, for exercising ``:collapse:``.
+COLLAPSE = Path(__file__).parent / "fixtures" / "design_collapse"
+
+#: A design parameterized by a configuration struct -- the shape CVA6 and other
+#: modern cores use, where a parameter's value is unreadable but its type is not.
+CONFIG = Path(__file__).parent / "fixtures" / "design_config"
+
 
 @pytest.fixture(autouse=True)
 def _clear_index_cache():

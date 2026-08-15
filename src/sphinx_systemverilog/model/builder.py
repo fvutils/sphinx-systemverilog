@@ -56,8 +56,11 @@ class ModelBuilder:
         self.nodocs_policy = nodocs_policy
         #: Whether to extract ``\\`define`` macros.
         self.document_macros = document_macros
-        #: module type -> [(instance_name, child_module_type)] structural edges.
-        self.instance_edges: dict[str, list[tuple[str, str]]] = {}
+        #: The live pyslang ``Compilation``, retained after :meth:`_build` so the
+        #: instance hierarchy can be walked lazily.  Never walked during a build.
+        self.compilation: Any = None
+        #: The ``SourceManager`` matching :attr:`compilation`.
+        self.source_manager: Any = None
         #: Error/fatal diagnostics rendered as strings; surfaced as warnings.
         self.diagnostics: list[str] = []
         #: Count of suppressed non-error (lint) diagnostics; surfaced as info.
@@ -135,34 +138,13 @@ class ModelBuilder:
 
         if self.document_macros:
             roots.extend(self._collect_macros(trees))
-        self._collect_instances(comp)
+        # Deliberately *not* walking the instance hierarchy here.  ``getRoot()``
+        # is free but touching each ``inst.body`` is not, and most builds never
+        # render a structural directive.  The compilation is retained instead so
+        # ``model.structure.StructureProvider`` can walk it on demand.
+        self.compilation = comp
+        self.source_manager = source_manager
         return roots
-
-    def _collect_instances(self, comp: Any) -> None:
-        """Capture module structural composition (instance hierarchy) edges."""
-        try:
-            root = comp.getRoot()
-            tops = list(root.topInstances)
-        except Exception:
-            return
-        visited: set[str] = set()
-        queue = list(tops)
-        while queue:
-            inst = queue.pop()
-            body = getattr(inst, "body", None)
-            type_name = _instance_type(inst)
-            if body is None or not type_name or type_name in visited:
-                continue
-            visited.add(type_name)
-            edges: list[tuple[str, str]] = []
-            for member in _iter_scope(body):
-                if member.kind == SymbolKind.Instance:
-                    child_type = _instance_type(member)
-                    if child_type:
-                        edges.append((member.name, child_type))
-                        queue.append(member)
-            if edges:
-                self.instance_edges[type_name] = edges
 
     def _collect_macros(self, trees: list[Any]) -> list[SvObject]:
         """Extract ``\\`define`` macros (with doc comments) from the token stream."""
@@ -699,18 +681,6 @@ def _macro_signature(syn: Any) -> str:
     if body and len(body) <= 48:
         sig += " " + body
     return sig
-
-
-def _instance_type(inst: Any) -> str | None:
-    """The module/definition type name behind an instance (or its body)."""
-    body = getattr(inst, "body", None)
-    if body is not None:
-        defn = getattr(body, "definition", None)
-        if defn is not None and getattr(defn, "name", ""):
-            return defn.name
-        if getattr(body, "name", ""):
-            return body.name
-    return getattr(inst, "name", None)
 
 
 def _is_covergroup(sym: Any) -> bool:

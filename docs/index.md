@@ -19,6 +19,7 @@ usage/native-style
 usage/naturaldocs-style
 usage/doxygen-style
 usage/modules
+usage/structure
 usage/diagrams
 usage/whole-tree
 usage/cross-referencing
@@ -30,6 +31,7 @@ usage/advanced
 :caption: Examples
 
 examples/sample
+examples/design
 examples/naturaldocs
 examples/uvm
 ```

@@ -28,8 +28,20 @@ def test_config_values_registered(app):
         "sv_build_units",
         "sv_doc_style",
         "sv_default_options",
+        "sv_structure_tops",
+        "sv_structure_max_instances",
+        "sv_instance_tree_depth",
+        "sv_used_by_limit",
     ):
         assert hasattr(app.config, name)
+
+
+@pytest.mark.sphinx("html", testroot="basic")
+def test_structure_directives_registered(app):
+    domain = app.env.domains["sv"]
+
+    for name in ("instance-tree", "used-by", "parameter-matrix"):
+        assert name in domain.directives
 
 
 @pytest.mark.sphinx("html", testroot="basic")

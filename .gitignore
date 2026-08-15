@@ -222,3 +222,7 @@ packages/
 .codex/
 .cursor/
 
+
+# examples/cva6: the CVA6 checkout and its build output
+examples/cva6/_cva6
+examples/cva6/_build/

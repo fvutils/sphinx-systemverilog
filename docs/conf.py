@@ -37,14 +37,29 @@ _fixture_files = [
     if f.endswith((".sv", ".svh"))
 ]
 
+# The structural-documentation example page needs a design with a real
+# hierarchy: generate loops, an instance array, and one module elaborated at two
+# different widths.  That is exactly the M1 test fixture, so the example page
+# renders from the same source the tests assert against.
+_designs = [
+    os.path.abspath(os.path.join(_here, "..", "tests", "fixtures", d))
+    for d in ("design", "design_collapse")
+]
+_design_files = [
+    os.path.join(d, f)
+    for d in _designs
+    for f in sorted(os.listdir(d))
+    if f.endswith((".sv", ".svh"))
+]
+
 if os.path.isfile(_uvm_pkg) and not os.environ.get("SV_DOCS_NO_UVM"):
     # uvm_pkg.sv `include`s the whole library; the fixture files are parsed as
     # additional build units into the same index.
-    sv_build_units = [_uvm_pkg, *_fixture_files]
+    sv_build_units = [_uvm_pkg, *_fixture_files, *_design_files]
     sv_include_dirs = [_uvm_src]
     tags.add("have_uvm")  # noqa: F821 (Sphinx injects `tags`)
 else:
-    sv_source_dirs = [_fixtures]
+    sv_source_dirs = [_fixtures, *_designs]
 
 # -- General ------------------------------------------------------------------
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}

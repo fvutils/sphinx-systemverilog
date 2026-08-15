@@ -107,6 +107,11 @@ class AutoSvDirective(Directive):
         "doc-style": directives.unchanged,
         "recursive": directives.flag,
         "show-inheritance": directives.flag,
+        # Structural views for modules.  None defaults to on: each one triggers
+        # the (otherwise never paid) instance-hierarchy walk.
+        "show-instances": directives.flag,
+        "show-used-by": directives.flag,
+        "show-parameters-used": directives.flag,
         # Skip silently (no warning) when the target is not in the index - used
         # to make a page render the same whether optional sources are present.
         "optional": directives.flag,
@@ -163,6 +168,7 @@ class AutoSvDirective(Directive):
         # callers can test truthiness.
         for key in (
             "undoc-members", "inherited-members", "recursive", "show-inheritance",
+            "show-instances", "show-used-by", "show-parameters-used",
         ):
             if key in merged and merged[key] is None:
                 merged[key] = True

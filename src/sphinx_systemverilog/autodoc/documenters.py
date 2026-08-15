@@ -56,12 +56,46 @@ class SvDocumenter:
             lines.append(f"{indent}{INDENT}.. sv:inheritance-diagram:: {qn}")
             lines.append("")
 
+        lines.extend(self._structure_lines(obj, indent))
+
         if self._wants_members(obj):
             shown = [
                 c for c in self._ordered_members(obj) if not self._skip_member(obj, c)
             ]
             lines.extend(self._render_members(shown, indent, level))
             lines.extend(self._render_inherited(obj, indent, level))
+        return lines
+
+    #: ``:show-*:`` option -> (structural directive, section heading).  Emitted
+    #: as nested directives so the structural renderers stay in one place and
+    #: the standalone ``sv:instance-tree::`` form behaves identically.
+    _STRUCTURE_SECTIONS = (
+        ("show-instances", "instance-tree", "Instance tree"),
+        ("show-used-by", "used-by", "Instantiated by"),
+        ("show-parameters-used", "parameter-matrix", "Parameter values used"),
+    )
+
+    #: Kinds that can participate in an elaborated hierarchy.
+    _STRUCTURAL_KINDS = {"module", "interface", "program"}
+
+    def _structure_lines(self, obj: SvObject, indent: str) -> list[str]:
+        """Nested structural views for a module, when explicitly asked for.
+
+        Every one of these triggers the instance-hierarchy walk, which is why
+        none of them defaults to on.  A user who wants them everywhere can say
+        so through ``sv_default_options`` --- that is their explicit choice.
+        """
+        if obj.kind not in self._STRUCTURAL_KINDS:
+            return []
+        lines: list[str] = []
+        body = indent + INDENT
+        for option, directive, heading in self._STRUCTURE_SECTIONS:
+            if not self.options.get(option):
+                continue
+            lines.append(f"{body}.. rubric:: {heading}")
+            lines.append("")
+            lines.append(f"{body}.. sv:{directive}:: {obj.name}")
+            lines.append("")
         return lines
 
     def _render_inherited(

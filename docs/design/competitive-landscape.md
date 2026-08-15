@@ -17,6 +17,12 @@
 3. **Right-pattern / wrong-language** — VHDL-only, or C/C++-only (Breathe/Exhale via Doxygen).
 4. **Legacy Doxygen-HDL hacks** — dead since ~2018, no native SV.
 
+**Amended 2026-08-14 after examining CVA6 (§2.6):** there is a fifth bucket, and it is the one that
+matters. The only tool actually documenting a large live SystemVerilog design is a **bespoke
+in-project regex script** — 655 lines of Python, hardcoded module list, 203 hand-maintained lines
+recording which ports are tied off. Not a rival, but the honest answer to "what do serious projects
+use today". The competition is a blank page and a weekend.
+
 The mature, widely-adopted tooling in this space (Breathe/Exhale) **cannot reach the SystemVerilog market** because its parser (Doxygen) has no native SV support. The category is therefore **wide open** — but also **small**, which is itself the reason no mature tool exists. The strategic risk is market size and solo-maintenance, not being out-built.
 
 ---
@@ -77,6 +83,107 @@ NaturalDocs is what UVM ships (prebuilt ND HTML in `packages/uvm/docs/html`). Th
 
 ---
 
+### 2.6 CVA6's `spec_builder.py` — the real competitor, and it is bespoke
+
+**Date examined:** 2026-08-14 · **Source:** `github.com/openhwgroup/cva6`, `docs/scripts/`
+
+The competitors above are general-purpose tools. The one that actually documents a large, live
+SystemVerilog design is none of them: it is a **655-line bespoke Python script** that OpenHW Group
+wrote for CVA6, their RISC-V application-class core. This is what a serious project does today in
+the absence of a tool, and it is the most informative comparison available.
+
+**What it does.** `spec_builder.py` extracts port tables per module and a parameter table from the
+configuration struct, emitting AsciiDoc and reStructuredText that a hand-written design manual
+`include::`s. `parameters_extractor.py` scrapes `config_pkg.sv`. `define_blacklist.py` records
+which ports are tied off in a given configuration.
+
+**How it works, and what that costs them:**
+
+| Mechanism | Consequence |
+|---|---|
+| Ports extracted by a line regex: `^ +(?:(in\|out)put +([\S]*(?: +.* *\|)) ([\S]*)\n` | Formatting-dependent, and cannot see types, parameters or elaboration |
+| The module list is **31 file paths hardcoded in Python** | Documenting a new module means editing the generator |
+| `define_blacklist.py` — **203 hand-maintained lines** of "port X is tied to 0 in this config" | Knowledge the elaborator already has, re-entered by hand and able to drift |
+| Config values injected into prose as AsciiDoc attributes (`{instr-per-fetch}`) | **Genuinely good** — see §2.6.2 |
+| Parameter descriptions scraped from `//` comments on struct fields | Works, but only for one hardcoded struct in one hardcoded file |
+
+**Measured head-to-head on ports.** Running both over the 29 modules in their own hardcoded list:
+
+```
+TOTAL                     856     856     +0
+```
+
+Their regex extracts **exactly the same number of ports as our parser — 856**. Credit where due:
+their RTL is formatted rigorously enough that a regex works. But it gets **three port names wrong**
+out of 856, and the failures show the mechanism's fragility rather than a coding slip:
+
+- `serdiv.opcode_i` is reported as `rem`, because the line carries a trailing comment
+  (`input logic [1:0] opcode_i,  // 0: udiv, 2: urem, 1: div, 3: rem`) and the greedy regex takes
+  the last token.
+- `id_stage.sdtrig_decoder_action_i` is reported as `sdtrig_decoder_action_i[CVA6Cfg.NrIssuePorts]`,
+  with the unpacked array dimension glued into the name.
+
+The honest reading: **the regex is not inaccurate today, it is undefended.** It holds because the
+codebase is uniformly formatted, and it fails silently when that assumption breaks. That is a
+maintenance liability, not a present defect — and it is the argument for a real front-end.
+
+#### 2.6.1 What we do that they cannot
+
+Everything structural. Their tool sees one file at a time, so the questions it cannot answer are
+exactly the ones this project targets:
+
+- **Instantiation hierarchy.** Their design manual documents module composition in hand-written
+  prose and hand-drawn PNGs. We generate it: `cva6` → 11 children → 337 instances, generate paths
+  and elaborated parameters included.
+- **Used-by.** Absent entirely.
+- **Parameter matrix.** Absent. We report, for example, that `lzc` is elaborated at six distinct
+  widths across 50 sites.
+- **Tied-off ports.** Their `define_blacklist.py` is the hand-written version of our `M3-IMPL-4`
+  (constant-tied port detection). That 203-line file is the single strongest argument in this
+  document for elaboration-based documentation: it is derivable, and they maintain it by hand.
+
+There is also prose in their manual that *asserts* what we compute:
+
+> "As compressed extension is enabled, {instr-per-fetch} `instr_scan` are instantiated..."
+
+We render `gen_instr_scan[*].i_instr_scan : instr_scan (×2)` from the elaborated design. Their
+sentence is true today and will not be checked by anything if it stops being true.
+
+#### 2.6.2 What they do that we should learn from
+
+Three things, none of which we currently have. They are recorded as proposed work, not as defeats:
+
+1. **Configuration values substituted into narrative prose.** `{instr-per-fetch}`, `{ohg-config}`
+   and ~40 more are generated from the elaborated configuration and used throughout hand-written
+   text, so the prose cannot silently disagree with the build. **We have no equivalent.** A role
+   that inlines an elaborated parameter — `:sv:value:`cva6:CVA6Cfg.NrIssuePorts`` — would be a
+   small change with an outsized effect on doc trustworthiness, and would extend naturally to
+   computed structural facts (instance counts).
+2. **Struct and enum members as documented objects.** Their `parameters_extractor.py` exists
+   *solely* because a packed-struct typedef's fields are not otherwise documentable. We have the
+   same gap, verified: we index `config_pkg::cva6_user_cfg_t` as a typedef with **zero children**.
+   For RTL a config struct is a first-class API surface and its fields carry doc comments. This is
+   arguably a larger gap than anything in the module-documentation plan.
+3. **A "connects to" column on every port.** Their convention is `// <description> - <SUBSYSTEM>`,
+   hand-tagged. It validates that readers want to know what a port attaches to — which our
+   `M3-IMPL-1` can answer from `portConnections` with the *actual* instance rather than a manual
+   tag. Their manual tagging is evidence of demand, and evidence that we should rank M3 higher.
+
+#### 2.6.3 Architectural validation
+
+Their design manual is **hand-written prose per module with generated tables included into it**
+(`include::port_frontend.adoc[]`). That is exactly the narrative-plus-autodoc split this project
+assumes, arrived at independently by a large project. Our standalone structural directives
+(`sv:used-by::`, `sv:instance-tree::`) support the same composition, which is worth keeping: a
+design manual is not an API dump, and the generated content has to be embeddable into prose rather
+than only replacing it.
+
+**Threat assessment: none, and that is the point.** `spec_builder.py` is not distributable — it is
+CVA6-specific, with hardcoded paths and a hardcoded module list. Every project doing this today is
+writing its own. That is the market.
+
+---
+
 ## 3. The moat — and the honest counterweights
 
 **Moat (real and singular):** `pyslang` provides Python bindings to **slang, a full SystemVerilog compiler/elaborator.** No competitor has a real SV front-end. That is the difference between "regex that finds `module foo`" and resolved type hierarchies, cross-module references, parameterized classes, and UVM — i.e., the difference between a toy and `autodoc`-for-SV.
@@ -90,6 +197,12 @@ Source: `github.com/MikePopoloski/pyslang`
 - **`slang`/`pyslang` is both moat and dependency risk.** The §8 `SvObject` normalization (isolating `pyslang` API churn) is the correct hedge; keep that boundary strict.
 
 **Net:** No *direct* competitor — only an architectural template to borrow from (sphinx-vhdl, Breathe/Exhale) and a field of stalled, image-only, or wrong-language tools.
+
+**Amended after examining CVA6 (§2.6):** the more accurate statement is that the competition is
+not a *tool* at all — it is **each project writing its own regex scraper**. That reframes the
+opportunity: the pitch is not "better than tool X", it is "delete your `spec_builder.py`". It also
+sets a concrete bar, because a bespoke script is tuned to its project and will beat a general tool
+on that project's conventions unless we cover the same ground (§2.6.2).
 
 ---
 
@@ -106,6 +219,7 @@ Source: `github.com/MikePopoloski/pyslang`
 | `doxygen-verilog` | docgen | Doxygen fork | no (Verilog only) | legacy | ~41★ | dead ~2018 | **Low** |
 | Breathe / Exhale | docgen → Sphinx | Doxygen | no | **mature** | **high** | active | **Low (C/C++ only)** |
 | NaturalDocs | docgen (standalone) | own | reads SV comments | mature/old | legacy | maintained | none (dialect to read) |
+| **CVA6 `spec_builder.py`** | bespoke, in-project | **line regex** | Verilog-2001 subset | in production | one project | active | **none (not distributable) — but it is what the market does today** |
 | **sphinx-systemverilog (this)** | Sphinx domain + autodoc | **pyslang/slang** | **yes (full)** | building | — | — | — |
 
 ---
@@ -123,3 +237,4 @@ Primary unless noted.
 - `github.com/avelure/doxygen-verilog`, `onworks.net/software/app-doxverilog` (secondary), `sndegroot.blogspot.com` (blog)
 - `github.com/brabect1/hdl_api_doc_test`
 - `github.com/MikePopoloski/pyslang`
+- `github.com/openhwgroup/cva6` — `docs/scripts/{spec_builder,parameters_extractor,define_blacklist,classes}.py`, `docs/design/design-manual/source/*.adoc`, `core/Flist.cva6` (examined at `master`, 2026-08-14)

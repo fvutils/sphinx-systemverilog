@@ -12,6 +12,7 @@ from typing import Iterable
 
 from .builder import ModelBuilder
 from .objects import SvObject
+from .structure import DEFAULT_MAX_INSTANCES, DesignStructure, StructureProvider
 
 
 class SvIndex:
@@ -25,8 +26,9 @@ class SvIndex:
         self._by_name: dict[str, list[SvObject]] = {}
         self.diagnostics: list[str] = []
         self.suppressed_count: int = 0
-        #: module type -> [(instance_name, child_type)] structural edges.
-        self.instance_edges: dict[str, list[tuple[str, str]]] = {}
+        #: Lazy access to the elaborated instance hierarchy.  Present only in the
+        #: process that built the index -- see :meth:`__getstate__`.
+        self._provider: "StructureProvider | None" = None
 
     # -- construction ---------------------------------------------------------
 
@@ -68,6 +70,54 @@ class SvIndex:
     def __contains__(self, name: str) -> bool:
         return self.get(name) is not None
 
+    # -- design structure (lazy) ----------------------------------------------
+
+    def attach_structure_provider(self, provider: "StructureProvider") -> None:
+        """Attach the lazy hierarchy provider.  Does **not** walk anything."""
+        self._provider = provider
+
+    @property
+    def structure_provider(self) -> "StructureProvider | None":
+        return self._provider
+
+    @property
+    def structure(self) -> "DesignStructure | None":
+        """The elaborated design structure, walking the hierarchy on first use.
+
+        Returns ``None`` when no provider is attached, which is the normal state
+        after the index has been unpickled from Sphinx's environment: the live
+        ``Compilation`` cannot survive pickling, so structural directives on a
+        re-read page degrade with a warning instead of crashing the build.
+        """
+        if self._provider is None:
+            return None
+        return self._provider.get()
+
+    @property
+    def instance_edges(self) -> dict[str, list[tuple[str, str]]]:
+        """Deprecated: ``{parent: [(instance_name, child_type)]}``.
+
+        Retained for the original instance-diagram API.  Touching it triggers
+        the hierarchy walk, so prefer :attr:`structure`, whose records carry
+        parameters, generate paths and array multiplicity.
+        """
+        structure = self.structure
+        return structure.legacy_edges() if structure is not None else {}
+
+    # -- pickling -------------------------------------------------------------
+
+    def __getstate__(self) -> dict:
+        """Drop the provider before pickling.
+
+        Sphinx pickles arbitrary attributes stored on ``env``, and the index
+        lives there.  A pyslang ``Compilation`` is not picklable, so leaving the
+        provider in place would break *every* build, structural or not --- not
+        merely the pages that use it.
+        """
+        state = self.__dict__.copy()
+        state["_provider"] = None
+        return state
+
 
 #: In-process cache: signature -> SvIndex.  Avoids re-parsing across repeated
 #: builds in one process (sphinx-autobuild, test sessions) when nothing changed.
@@ -87,6 +137,8 @@ def build_index(
     base_path: str | None = None,
     nodocs_policy: str = "include",
     document_macros: bool = True,
+    structure_tops: Iterable[str] | None = None,
+    structure_max_instances: int = DEFAULT_MAX_INSTANCES,
     use_cache: bool = True,
 ) -> SvIndex:
     """Build an :class:`SvIndex` from the configured sources.
@@ -110,6 +162,7 @@ def build_index(
     key = (
         tuple(sorted(files)), doc_style, tuple(sorted(include_dirs)),
         tuple(sorted((defines or {}).items())), nodocs_policy, document_macros,
+        tuple(structure_tops or ()), structure_max_instances,
         mtimes,
     )
     if use_cache and key in _INDEX_CACHE:
@@ -128,7 +181,17 @@ def build_index(
         index.add_roots(roots)
     index.diagnostics = builder.diagnostics
     index.suppressed_count = builder.suppressed_count
-    index.instance_edges = builder.instance_edges
+    if builder.compilation is not None:
+        # Attach only.  Nothing here walks the hierarchy; the first structural
+        # directive to ask does, once.
+        index.attach_structure_provider(
+            StructureProvider(
+                builder.compilation,
+                builder.source_manager,
+                tops=structure_tops,
+                max_instances=structure_max_instances,
+            )
+        )
 
     if use_cache:
         _INDEX_CACHE[key] = index

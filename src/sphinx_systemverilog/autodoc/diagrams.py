@@ -125,7 +125,18 @@ class SvInstanceDiagram(Directive):
         index = getattr(env, "sv_index", None)
         if index is None:
             return []
-        edges = getattr(index, "instance_edges", {})
+        # This is the point at which the hierarchy walk is paid for.  Nothing
+        # earlier in the build touches it.
+        structure = getattr(index, "structure", None)
+        if structure is None:
+            logger.warning(
+                "sphinx-systemverilog: the elaborated design is not available in "
+                "this process, so %r cannot be diagrammed; a full rebuild "
+                "(sphinx-build -E) will restore it", top, type="systemverilog",
+                location=(env.docname, self.lineno),
+            )
+            return []
+        edges = structure.edges
         if top not in edges:
             logger.warning(
                 "sphinx-systemverilog: no instantiation hierarchy for module %r "
@@ -138,6 +149,22 @@ class SvInstanceDiagram(Directive):
         node["options"] = {"docname": env.docname}
         node["alt"] = f"Instance diagram of {top}"
         return [node]
+
+
+def _edge_pairs(entry: Any) -> tuple[str, str]:
+    """Normalize an edge to ``(label, child_type)``.
+
+    Accepts both the :class:`~sphinx_systemverilog.model.structure.SvInstance`
+    records produced by the structure walk and the original
+    ``(instance_name, child_type)`` tuples, so callers holding the legacy shape
+    keep working.
+    """
+    if isinstance(entry, tuple):
+        return entry
+    label = entry.label
+    if entry.array_count > 1:
+        label = f"{label} (×{entry.array_count})"
+    return label, entry.type_name
 
 
 def build_instance_dot(edges: dict, top: str) -> str:
@@ -155,7 +182,8 @@ def build_instance_dot(edges: dict, top: str) -> str:
             continue
         visited.add(mod)
         nodes_in.add(mod)
-        for inst_name, child_type in edges.get(mod, []):
+        for entry in edges.get(mod, []):
+            inst_name, child_type = _edge_pairs(entry)
             nodes_in.add(child_type)
             key = (mod, child_type, inst_name)
             if key not in drawn:
