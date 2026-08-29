@@ -49,6 +49,12 @@ class SvObjectDescription(ObjectDescription):
         "no-index-entry": directives.flag,
         "module": directives.unchanged,
         "extends": directives.unchanged,
+        # What a class is in UVM terms ("component", "sequence", ...). Set by
+        # the documenter, which derives it from the base-class chain; a hand
+        # written directive may set it too.
+        "uvm": directives.unchanged,
+        # Standard phases the class implements, in execution order.
+        "phases": directives.unchanged,
         "virtual": directives.flag,
         "qualifiers": directives.unchanged,
         "source": directives.unchanged,
@@ -143,6 +149,16 @@ class SvObjectDescription(ObjectDescription):
             signode += addnodes.desc_annotation("  extends ", "  extends ")
             signode += _type_xref(extends, self.env)
 
+        uvm = self.options.get("uvm")
+        if uvm:
+            # A badge rather than a field: what a class *is* belongs beside its
+            # name, not in a list below the prose. A reader scanning a package
+            # page of forty classes wants to pick out the sequences without
+            # reading forty descriptions.
+            signode += addnodes.desc_annotation(
+                f"  [{uvm}]", f"  [{uvm}]", classes=["sv-uvm-role"]
+            )
+
         self._add_source_link(signode)
         return name
 
@@ -195,6 +211,35 @@ class SvObjectDescription(ObjectDescription):
         if node is not None:
             signode["_sv_source"] = (file_path, int(line_s))
             signode += node
+
+    def transform_content(self, contentnode) -> None:
+        """Prepend the UVM phase inventory, when there is one.
+
+        A field rather than a signature annotation, unlike the role badge: a
+        component can implement half a dozen phases and that does not belong
+        trailing off the end of a class name. It goes *first* in the content
+        because "what does this component do, and when" is the question a
+        reader has before they read the prose, not after.
+        """
+        phases = self.options.get("phases")
+        if not phases:
+            return
+
+        field_list = nodes.field_list(classes=["sv-uvm-phases"])
+        field = nodes.field()
+        field += nodes.field_name("UVM phases", "UVM phases")
+        body = nodes.field_body()
+        para = nodes.paragraph()
+        for position, phase in enumerate(
+            part.strip() for part in phases.split(",") if part.strip()
+        ):
+            if position:
+                para += nodes.Text(", ")
+            para += nodes.literal(phase, phase)
+        body += para
+        field += body
+        field_list += field
+        contentnode.insert(0, field_list)
 
     def add_target_and_index(
         self, name: str, sig: str, signode: addnodes.desc_signature

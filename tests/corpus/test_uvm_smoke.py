@@ -10,15 +10,12 @@ import os
 
 import pytest
 
+from tests.conftest import UVM_SRC, requires_uvm
+
 pytestmark = pytest.mark.corpus
 
-_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_UVM_SRC = os.path.join(_REPO, "packages", "uvm", "src")
+_UVM_SRC = str(UVM_SRC)
 _UVM_PKG = os.path.join(_UVM_SRC, "uvm_pkg.sv")
-
-requires_uvm = pytest.mark.skipif(
-    not os.path.isfile(_UVM_PKG), reason="UVM sources not present"
-)
 
 
 @pytest.fixture(scope="module")

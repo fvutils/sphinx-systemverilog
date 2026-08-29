@@ -32,6 +32,10 @@ def _build_index(app: Any) -> None:
         document_macros=config.sv_document_macros,
         structure_tops=config.sv_structure_tops,
         structure_max_instances=config.sv_structure_max_instances,
+        uvm_root=config.sv_uvm_root,
+        uvm_blackbox=config.sv_uvm_blackbox,
+        uvm_blackbox_bases=config.sv_uvm_blackbox_bases,
+        uvm_max_components=config.sv_uvm_max_components,
     )
     app.env.sv_index = index
     logger.info(
@@ -54,6 +58,7 @@ def setup(app: Any) -> dict[str, Any]:
     from .autodoc import AUTODOC_DIRECTIVES
     from .autodoc.diagrams import SvInheritanceDiagram, SvInstanceDiagram
     from .autodoc.structure import STRUCTURE_DIRECTIVES
+    from .autodoc.uvm import UVM_DIRECTIVES
     from .config import register_config, validate_config
     from .domain import SystemVerilogDomain
 
@@ -65,6 +70,8 @@ def setup(app: Any) -> dict[str, Any]:
     app.add_directive_to_domain("sv", "inheritance-diagram", SvInheritanceDiagram)
     app.add_directive_to_domain("sv", "instance-diagram", SvInstanceDiagram)
     for name, directive in STRUCTURE_DIRECTIVES.items():
+        app.add_directive_to_domain("sv", name, directive)
+    for name, directive in UVM_DIRECTIVES.items():
         app.add_directive_to_domain("sv", name, directive)
 
     for name, directive in AUTODOC_DIRECTIVES.items():

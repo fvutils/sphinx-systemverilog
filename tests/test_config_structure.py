@@ -18,6 +18,8 @@ SETTINGS = [
     ("sv_structure_max_instances", 20000, None),
     ("sv_instance_tree_depth", 3, None),
     ("sv_used_by_limit", 50, 0),        # 0 disables the cap
+    ("sv_uvm_tree_depth", 4, None),
+    ("sv_uvm_max_components", 5000, None),
 ]
 
 

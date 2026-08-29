@@ -52,14 +52,47 @@ _design_files = [
     if f.endswith((".sv", ".svh"))
 ]
 
+# The UVM testbench example renders from the mini-UVM stub rather than the real
+# library, so the page is live in *both* builds -- a reader on the pip-installed
+# docs sees a real extracted tree, not a description of one.
+#
+# Listed file-by-file rather than by directory on purpose: `tests/fixtures/uvm_tb`
+# also holds `missing_dep_tb.sv`, which imports a package that deliberately does
+# not exist, and `real_uvm_tb.sv`, which needs the real library. Both are correct
+# as test fixtures and both would put errors in this build.
+_uvm_stub = os.path.abspath(
+    os.path.join(_here, "..", "tests", "fixtures", "uvm_stub")
+)
+_uvm_tb = os.path.abspath(os.path.join(_here, "..", "tests", "fixtures", "uvm_tb"))
+_tb_files = [
+    os.path.join(_uvm_stub, "mini_uvm.sv"),
+    os.path.join(_uvm_tb, "basic_tb.sv"),
+    os.path.join(_uvm_tb, "blackbox_tb.sv"),
+    os.path.join(_uvm_tb, "config_tb.sv"),
+    os.path.join(_uvm_tb, "tlm_tb.sv"),
+    os.path.join(_uvm_tb, "seq_tb.sv"),
+    os.path.join(_uvm_tb, "bridge_tb.sv"),
+    os.path.join(_uvm_tb, "override_tb.sv"),
+]
+
+# Demonstrates glob black-boxing on the example page: `acme_vip_agent` stands
+# for vendor VIP delivered as a precompiled library.  The base-class default
+# (`uvm_reg_block`) needs no configuration and covers the register model.
+#
+# The example page names its root explicitly on every directive, because this
+# fixture set holds two testbenches; without one the tree would pick a default
+# and say so, which is correct behaviour but reads as indecision in an example.
+sv_uvm_blackbox = ["acme_vip_*"]
+
 if os.path.isfile(_uvm_pkg) and not os.environ.get("SV_DOCS_NO_UVM"):
     # uvm_pkg.sv `include`s the whole library; the fixture files are parsed as
     # additional build units into the same index.
-    sv_build_units = [_uvm_pkg, *_fixture_files, *_design_files]
-    sv_include_dirs = [_uvm_src]
+    sv_build_units = [_uvm_pkg, *_fixture_files, *_design_files, *_tb_files]
+    sv_include_dirs = [_uvm_src, _uvm_stub]
     tags.add("have_uvm")  # noqa: F821 (Sphinx injects `tags`)
 else:
-    sv_source_dirs = [_fixtures, *_designs]
+    sv_build_units = [*_fixture_files, *_design_files, *_tb_files]
+    sv_include_dirs = [_uvm_stub]
 
 # -- General ------------------------------------------------------------------
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}

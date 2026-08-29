@@ -32,8 +32,24 @@ def test_config_values_registered(app):
         "sv_structure_max_instances",
         "sv_instance_tree_depth",
         "sv_used_by_limit",
+        "sv_uvm_blackbox",
+        "sv_uvm_blackbox_bases",
+        "sv_uvm_root",
+        "sv_uvm_tree_depth",
+        "sv_uvm_max_components",
     ):
         assert hasattr(app.config, name)
+
+
+@pytest.mark.sphinx("html", testroot="basic")
+def test_uvm_blackbox_bases_defaults_to_the_register_model(app):
+    """A register model is the thing most likely to be absent at doc time.
+
+    It is commonly generated from RDL or IP-XACT as a build step, so a doc build
+    that runs before -- or without -- that step must still produce an honest
+    tree rather than a silently shortened one.
+    """
+    assert app.config.sv_uvm_blackbox_bases == ["uvm_reg_block"]
 
 
 @pytest.mark.sphinx("html", testroot="basic")

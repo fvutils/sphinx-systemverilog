@@ -162,9 +162,56 @@ class SvDocumenter:
                 opts.append(":qualifiers: " + " ".join(quals))
         if obj.extends:
             opts.append(f":extends: {obj.extends}")
+        role = self._uvm_role(obj)
+        if role:
+            opts.append(f":uvm: {role}")
+            phases = self._uvm_phases(obj)
+            if phases:
+                opts.append(":phases: " + ", ".join(phases))
         if obj.location and obj.location.is_valid:
             opts.append(f":source: {obj.location.file}:{obj.location.line}")
         return opts
+
+    def _uvm_role(self, obj: SvObject) -> str:
+        """``component`` / ``sequence`` / ... for a class, else ``""``.
+
+        The question a reader arriving on a class page asks first, and one they
+        otherwise answer by following ``extends`` up three or four levels into
+        the library.
+
+        Computed from the *stored* ``extends`` chain rather than from the live
+        compilation, which is what lets it survive a pickled index: this runs on
+        names, and the names are in the index. It also means no UVM directive
+        has to be on the page and no provider is consulted --- a class page pays
+        nothing beyond a few dictionary lookups.
+        """
+        from ..model.uvm import uvm_role
+
+        if obj.kind != "class" or self.index is None:
+            return ""
+        chain, name, seen = [obj.name], obj.extends, {obj.name}
+        # Bounded: a broken index could in principle describe a cycle, and a
+        # documentation build must not hang on one.
+        while name and name not in seen and len(chain) < 32:
+            chain.append(name)
+            seen.add(name)
+            base = self.index.get(name)
+            name = base.extends if base is not None else ""
+        return uvm_role(chain)
+
+    def _uvm_phases(self, obj: SvObject) -> list[str]:
+        """The standard phases this class implements, in execution order.
+
+        Its *own* members only. A UVM component inherits every phase method and
+        overrides two or three, so listing the inherited ones would say the same
+        thing about every component in the testbench and answer nothing.
+        """
+        from ..model.uvm import phase_inventory
+
+        return phase_inventory(
+            child.name for child in obj.children
+            if child.kind in ("function", "task")
+        )
 
     def _doc_lines(self, obj: SvObject) -> list[str]:
         # The directive's resolved style (its :doc-style: override or the global

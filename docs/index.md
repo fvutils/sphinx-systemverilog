@@ -20,6 +20,7 @@ usage/naturaldocs-style
 usage/doxygen-style
 usage/modules
 usage/structure
+usage/uvm-testbench
 usage/diagrams
 usage/whole-tree
 usage/cross-referencing
@@ -33,6 +34,7 @@ usage/advanced
 examples/sample
 examples/design
 examples/naturaldocs
+examples/uvm-testbench
 examples/uvm
 ```
 

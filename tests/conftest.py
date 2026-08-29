@@ -30,6 +30,45 @@ COLLAPSE = Path(__file__).parent / "fixtures" / "design_collapse"
 #: modern cores use, where a parameter's value is unreadable but its type is not.
 CONFIG = Path(__file__).parent / "fixtures" / "design_config"
 
+#: A ~200-line stand-in for UVM.  It reproduces the static structure the
+#: testbench elaborator reads --- the factory registry, the component base-class
+#: chain, config_db and TLM signatures --- and compiles in ~0.02s against
+#: ~0.10s for real UVM, so the bulk of UVM coverage can run as fast unit tests
+#: with no ivpm dependency.  Real UVM remains the corpus gate.
+UVM_STUB = Path(__file__).parent / "fixtures" / "uvm_stub"
+
+#: Testbenches written against the stub, one per extraction behaviour.
+UVM_TB = Path(__file__).parent / "fixtures" / "uvm_tb"
+
+#: Real UVM sources, fetched by ivpm.  Tests needing them use ``requires_uvm``.
+UVM_SRC = Path(__file__).parent.parent / "packages" / "uvm" / "src"
+
+#: Skip marker for tests that need the real UVM library rather than the stub.
+#: Promoted out of ``tests/corpus/`` so every test module can reuse it.
+requires_uvm = pytest.mark.skipif(
+    not (UVM_SRC / "uvm_pkg.sv").is_file(), reason="UVM sources not present"
+)
+
+
+def uvm_stub_index(*tb_files: str, **kwargs):
+    """Build an index over the mini-UVM stub plus the named testbench files.
+
+    *tb_files* are names within :data:`UVM_TB`.  Caching is off by default:
+    these indexes are cheap, and a test that shares one with another test is a
+    test that can pass for the wrong reason.
+    """
+    from sphinx_systemverilog.model.index import build_index
+
+    units = [str(UVM_STUB / "mini_uvm.sv")]
+    units += [str(UVM_TB / name) for name in tb_files]
+    kwargs.setdefault("use_cache", False)
+    return build_index(
+        source_dirs=[str(UVM_STUB)],
+        build_units=units,
+        include_dirs=[str(UVM_STUB)],
+        **kwargs,
+    )
+
 
 @pytest.fixture(autouse=True)
 def _clear_index_cache():

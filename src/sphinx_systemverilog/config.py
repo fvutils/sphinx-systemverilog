@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .model.uvm import DEFAULT_BLACKBOX_BASES
+
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
@@ -50,6 +52,35 @@ def register_config(app: "Sphinx") -> None:
     # always reported.  0 disables the cap.
     app.add_config_value("sv_used_by_limit", 50, "env", types=[int])
 
+    # -- UVM testbench elaboration -------------------------------------------
+    # Glob patterns matched against a component's type name.  A match is
+    # rendered as an *opaque* node -- present, labelled and counted, never
+    # dropped.  This is how a testbench documents cleanly when part of it does
+    # not exist at doc-generation time (a RAL package generated from RDL, a
+    # vendor VIP delivered as an encrypted library).
+    app.add_config_value("sv_uvm_blackbox", [], "env", types=[list])
+    # As above, but matched against the base-class chain, so one entry covers a
+    # whole family.  The default lives in ``model.uvm`` so the shipped default
+    # and the one ``build_index`` applies cannot drift apart.
+    app.add_config_value(
+        "sv_uvm_blackbox_bases", list(DEFAULT_BLACKBOX_BASES), "env", types=[list]
+    )
+    # Root component to elaborate from.  Empty = auto-detect via the
+    # ``run_test("...")`` argument in a top module.
+    app.add_config_value("sv_uvm_root", "", "env", types=[str])
+    # Default depth for ``sv:uvm-tree``.  Deeper than the RTL default because a
+    # testbench is naturally shallower: test -> env -> agent -> driver is 4.
+    app.add_config_value("sv_uvm_tree_depth", 4, "env", types=[int])
+    # Ceiling on components visited during a testbench walk, mirroring
+    # ``sv_structure_max_instances``.  Exceeding it reports truncation.
+    app.add_config_value("sv_uvm_max_components", 5000, "env", types=[int])
+    # Promote orphaned ``config_db`` settings to build warnings.  Off by
+    # default, and deliberately so: adopting this extension must not turn a
+    # green build red because of a testbench smell nobody asked about.  The
+    # finding is always rendered in the page; escalating it is a project's own
+    # decision, taken once, in writing.
+    app.add_config_value("sv_uvm_warn_orphans", False, "env", types=[bool])
+
 
 def validate_config(app: "Sphinx", config) -> None:
     """Validate ``sv_*`` config values; emit a warning for bad input.
@@ -63,6 +94,8 @@ def validate_config(app: "Sphinx", config) -> None:
         ("sv_structure_max_instances", 20000, False),
         ("sv_instance_tree_depth", 3, False),
         ("sv_used_by_limit", 50, True),      # 0 means "no cap"
+        ("sv_uvm_tree_depth", 4, False),
+        ("sv_uvm_max_components", 5000, False),
     ):
         value = getattr(config, name, default)
         floor = 0 if allow_zero else 1

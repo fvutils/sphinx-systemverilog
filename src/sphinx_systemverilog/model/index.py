@@ -13,6 +13,13 @@ from typing import Iterable
 from .builder import ModelBuilder
 from .objects import SvObject
 from .structure import DEFAULT_MAX_INSTANCES, DesignStructure, StructureProvider
+from .uvm import DEFAULT_MAX_COMPONENTS, UvmProvider, UvmStructure
+
+#: Attributes that hold a live pyslang ``Compilation`` and therefore must never
+#: reach Sphinx's pickle.  Listed once, in one place, because forgetting to add
+#: a new provider here breaks *every* build rather than only the pages that use
+#: it --- see :meth:`SvIndex.__getstate__`.
+_UNPICKLABLE_ATTRS = ("_provider", "_uvm_provider")
 
 
 class SvIndex:
@@ -29,6 +36,9 @@ class SvIndex:
         #: Lazy access to the elaborated instance hierarchy.  Present only in the
         #: process that built the index -- see :meth:`__getstate__`.
         self._provider: "StructureProvider | None" = None
+        #: Lazy access to the extracted UVM testbench hierarchy.  Same lifetime
+        #: rules as :attr:`_provider`.
+        self._uvm_provider: "UvmProvider | None" = None
 
     # -- construction ---------------------------------------------------------
 
@@ -104,18 +114,42 @@ class SvIndex:
         structure = self.structure
         return structure.legacy_edges() if structure is not None else {}
 
+    # -- UVM testbench structure (lazy) ---------------------------------------
+
+    def attach_uvm_provider(self, provider: "UvmProvider") -> None:
+        """Attach the lazy testbench provider.  Does **not** extract anything."""
+        self._uvm_provider = provider
+
+    @property
+    def uvm_provider(self) -> "UvmProvider | None":
+        return self._uvm_provider
+
+    @property
+    def uvm_structure(self) -> "UvmStructure | None":
+        """The testbench hierarchy, extracting it on first use.
+
+        ``None`` after the index has been unpickled, for the same reason
+        :attr:`structure` is: the live ``Compilation`` cannot survive pickling,
+        so a UVM directive on a re-read page degrades with a warning rather
+        than crashing the build.
+        """
+        if self._uvm_provider is None:
+            return None
+        return self._uvm_provider.get()
+
     # -- pickling -------------------------------------------------------------
 
     def __getstate__(self) -> dict:
-        """Drop the provider before pickling.
+        """Drop every live provider before pickling.
 
         Sphinx pickles arbitrary attributes stored on ``env``, and the index
-        lives there.  A pyslang ``Compilation`` is not picklable, so leaving the
+        lives there.  A pyslang ``Compilation`` is not picklable, so leaving a
         provider in place would break *every* build, structural or not --- not
         merely the pages that use it.
         """
         state = self.__dict__.copy()
-        state["_provider"] = None
+        for attr in _UNPICKLABLE_ATTRS:
+            state[attr] = None
         return state
 
 
@@ -139,6 +173,10 @@ def build_index(
     document_macros: bool = True,
     structure_tops: Iterable[str] | None = None,
     structure_max_instances: int = DEFAULT_MAX_INSTANCES,
+    uvm_root: str = "",
+    uvm_blackbox: Iterable[str] | None = None,
+    uvm_blackbox_bases: Iterable[str] | None = None,
+    uvm_max_components: int = DEFAULT_MAX_COMPONENTS,
     use_cache: bool = True,
 ) -> SvIndex:
     """Build an :class:`SvIndex` from the configured sources.
@@ -163,6 +201,8 @@ def build_index(
         tuple(sorted(files)), doc_style, tuple(sorted(include_dirs)),
         tuple(sorted((defines or {}).items())), nodocs_policy, document_macros,
         tuple(structure_tops or ()), structure_max_instances,
+        uvm_root, tuple(uvm_blackbox or ()), tuple(uvm_blackbox_bases or ()),
+        uvm_max_components,
         mtimes,
     )
     if use_cache and key in _INDEX_CACHE:
@@ -190,6 +230,18 @@ def build_index(
                 builder.source_manager,
                 tops=structure_tops,
                 max_instances=structure_max_instances,
+            )
+        )
+        # Likewise attach-only: extracting the testbench hierarchy means walking
+        # every ``build_phase`` in the project, and most builds never ask.
+        index.attach_uvm_provider(
+            UvmProvider(
+                builder.compilation,
+                builder.source_manager,
+                root=uvm_root,
+                blackbox=uvm_blackbox,
+                blackbox_bases=uvm_blackbox_bases,
+                max_components=uvm_max_components,
             )
         )
 
