@@ -42,8 +42,21 @@ version = { attr = "sphinx_systemverilog.__version__._pkg_version" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The bundled agent skill ships in the wheel so that any environment with the
+# extension installed has authoring guidance version-matched to it.  setuptools
+# globs do not recurse, so each directory level is listed explicitly.
 [tool.setuptools.package-data]
-sphinx_systemverilog = ["py.typed"]
+sphinx_systemverilog = [
+    "py.typed",
+    "share/skills/*/SKILL.md",
+    "share/skills/*/references/*.md",
+]
+
+# Consumed by IVPM's agents handler, which links the skill into .agents/skills/,
+# .claude/skills/ and .cursor/skills/.  The entry-point name is the installed
+# skill's name and must match the SKILL.md frontmatter.
+[project.entry-points."agent.skills"]
+sphinx-systemverilog = "sphinx_systemverilog.skills:get_skill_dirs"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,6 +65,7 @@ markers = [
     "unit: pure-Python tests with no Sphinx app (model, docparse)",
     "sphinx: integration tests using sphinx.testing against tests/roots",
     "corpus: slow tests run over the UVM source corpus",
+    "packaging: builds a distribution; slow, and needs pip + setuptools",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

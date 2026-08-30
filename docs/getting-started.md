@@ -40,6 +40,21 @@ Use an `auto*` directive in any `.rst` (or MyST `.md`) page:
 This renders the class, its inheritance, and its documented members, pulling
 the text from the doc comments in your source.
 
+## Documenting with an AI agent
+
+The wheel ships an **agent skill** — authoring guidance for this extension,
+version-matched to the copy you installed, covering `conf.py` setup, every
+directive, the three comment dialects, the UVM views and the build warnings.
+
+It is registered under the `agent.skills` entry-point group, so a project
+managed with [IVPM](https://fvutils.github.io/ivpm/) picks it up automatically
+on `ivpm update` and links it into `.agents/skills/`, `.claude/skills/` and
+`.cursor/skills/`. To find it by hand:
+
+```bash
+python -c "from sphinx_systemverilog.skills import get_skill_dirs; print(get_skill_dirs()[0])"
+```
+
 ## Configuration reference
 
 | Option | Default | Meaning |
