@@ -36,49 +36,21 @@ jobs:
       - name: Build documentation (warnings as errors, live UVM reference)
         run: ./packages/python/bin/python -m sphinx -W -b html docs docs/_build/html
 
-  deploy-pages:
-    # Publish the docs to GitHub Pages, but only for pushes to main
-    # (not on PRs or the nightly schedule), and only after tests pass.
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v5
+  # The GitHub Pages deploy step WAS HERE and is deliberately gone (2026-08-31).
+  #
+  # It had no condition beyond the default branch, and since fvutils joined the
+  # Forgejo <-> GitHub mirror that branch is moved by a five-minute cron. A mirror
+  # operation must never be a publishing operation.
+  #
+  # DELETED rather than gated because dvkit.org owns all documentation: these docs
+  # publish to dvkit.org/fvutils/<repo>/ from .forgejo/workflows/, which uploads
+  # them as an artifact for the host-side poller. A tag-gated Pages deploy would
+  # still be a second publisher of the same content on a different schedule, and
+  # two publishers that agree today diverge the first time one fails quietly.
+  #
+  # THE DOCS BUILD ABOVE STAYS, as a CI check. A broken cross-reference should fail
+  # here, not render as a dead link on dvkit.org.
 
-      - name: Install Graphviz (for inheritance diagrams in the docs build)
-        run: sudo apt-get update && sudo apt-get install -y graphviz
-
-      # UVM is needed here too: this job builds the *published* site, which
-      # includes the live UVM reference.
-      - uses: fvutils/ivpm-setup@v1
-        with:
-          python-version: "3.12"
-          args: "-a"
-
-      - name: Install package (editable) into the ivpm environment
-        run: ./packages/python/bin/python -m pip install -e ".[dev]"
-
-      - name: Build documentation (warnings as errors, live UVM reference)
-        run: ./packages/python/bin/python -m sphinx -W -b html docs docs/_build/html
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/_build/html
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
 
   corpus:
     # Slow corpus smoke test (parses the full UVM library); nightly only.
