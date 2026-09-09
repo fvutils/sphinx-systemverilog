@@ -42,7 +42,13 @@ def _frontmatter(path: str) -> dict:
 
 
 def _pyproject() -> dict:
-    import tomllib
+    # tomllib is 3.11+; the support floor is 3.10, where tomli (a test-extra
+    # dependency) provides the same API.  Imported here rather than at module
+    # scope so the rest of the file still collects if neither is present.
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - depends on interpreter
+        import tomli as tomllib
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(root, "pyproject.toml")
