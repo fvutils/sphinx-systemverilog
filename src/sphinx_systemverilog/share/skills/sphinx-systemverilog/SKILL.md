@@ -144,6 +144,12 @@ NaturalDocs use `Function: name` headers, `Parameters:` sections, `<symbol>`
 and `~code~`; under Doxygen use `@brief`, `@param`, `@return`. One example of
 each, plus the `auto` detection rule: `references/comment-styles.md`.
 
+In the non-RST dialects (`plain`, `naturaldocs`, `doxygen`), bullet (`*`, `-`,
+`+`) and enumerated (`1.`, `a)`) lists are preserved — including the usual
+lead-in-then-indented-items shape. The items are dedented to their lead-in and
+the blank lines docutils requires are inserted for you, so no source cleanup is
+needed to make a banner-comment list render.
+
 ## Rules that are easy to get wrong
 
 1. **`sv_build_units` for anything configurable.** See the checklist above. A

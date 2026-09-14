@@ -88,6 +88,21 @@ and is left alone, which matters because UVM has 236 of those and only two real
 Stray RST characters in prose are escaped automatically, so comments written
 for NaturalDocs render cleanly without RST surprises.
 
+## Lists
+
+Bullet (`*`, `-`, `+`) and enumerated (`1.`, `a)`) lists are preserved. The
+common banner-comment shape — a lead-in line ending in `:` followed by items
+indented under it — renders as a real list: the items are dedented to their
+lead-in, the blank lines docutils requires are inserted for you, and nesting is
+kept. Wrapped item text folds back into its own item.
+
+```
+Composes the reused verification components:
+  * four bus agents
+  * the memory model, whose description
+    wraps onto a second line
+```
+
 ## Detached blocks and groups
 
 NaturalDocs blocks are frequently **separated** from the declaration they

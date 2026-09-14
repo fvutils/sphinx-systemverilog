@@ -33,6 +33,14 @@ Comment delimiters `/** */`, `/*! */`, `///`, and `//!` are all recognized.
 | `@a name` | *emphasis* |
 | `#symbol`, `@ref symbol` | a cross-reference |
 
+## Lists
+
+Bullet (`*`, `-`, `+`) and enumerated (`1.`, `a)`) lists are preserved, including
+the usual shape of a lead-in line ending in `:` followed by items indented under
+it. Items are dedented to their lead-in, the blank lines docutils needs are
+inserted automatically, and nesting is kept. A leading `*` is read as a bullet,
+not as emphasis; `*ptr` in prose still escapes as before.
+
 ## Example
 
 ```{eval-rst}

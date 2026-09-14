@@ -197,7 +197,15 @@ Step 4 is why banner comments are safe under `auto`:
 ```
 
 renders as the words it contains, rather than as a transition followed by
-unterminated emphasis. Setting `sv_doc_style = "native"` explicitly always uses
+unterminated emphasis.
+
+The same structural repair preserves **lists**: in `plain`, `naturaldocs` and
+`doxygen`, bullet (`*`, `-`, `+`) and enumerated (`1.`, `a)`) items are kept as
+list items, dedented to their lead-in line and blank-line separated so docutils
+recognises them. A lead-in ending in `:` followed by items indented under it —
+the way banner comments are normally written — needs no source cleanup.
+
+Setting `sv_doc_style = "native"` explicitly always uses
 the native parser whatever the comment looks like — which is stricter, not
 safer.
 
