@@ -60,6 +60,12 @@ Patterns are `fnmatch` globs, and they are matched against *every* macro in the
 expansion chain — so `uvm_component_utils`, the name you wrote, matches members
 that the inner `m_uvm_component_registry_internal` actually declared.
 
+The filter is not limited to members. A registration macro often emits a whole
+*class* — a `<type>_w` wrapper per registered type, say — and `autosvsummary`
+applies the same list when choosing what to document, so hiding the members and
+then publishing a page of the classes they belong to cannot happen. Naming an
+object exactly, as `autosvsummary`'s glob argument, still wins.
+
 This is a list rather than a blanket "hide macro content" switch on purpose: a
 project's own declaration macros may well generate the API worth reading. To
 extend the default instead of restating it:

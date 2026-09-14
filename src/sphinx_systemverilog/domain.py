@@ -136,6 +136,13 @@ class SvObjectDescription(ObjectDescription):
                 # Dimensions bind to the name; anything else is set off by a space.
                 sep = "" if tail.startswith("[") else " "
                 signode += addnodes.desc_annotation(sep + tail, sep + tail)
+        elif self.object_kind == "macro":
+            # The `define keyword is dropped: the kind label already says it,
+            # and what a reader needs is the name, its formals, and the body.
+            signode += addnodes.desc_name(name, name)
+            tail = _macro_tail(sig, name)
+            if tail:
+                signode += addnodes.desc_annotation(tail, tail)
         else:
             return_type = _signature_return(sig, name, self.object_kind)
             if return_type:
@@ -433,7 +440,34 @@ def _signature_name(sig: str, kind: str) -> str:
         head = sig.split("=", 1)[0].strip()
         last = head.split()[-1] if head.split() else sig
         return last.split("[", 1)[0] or last
+    if kind == "macro":
+        # '`define NAME(args) body' -> NAME.  Without this the first token wins
+        # and every macro in the project is indexed as '`define', so they
+        # collide on one anchor and one inventory entry.
+        return _macro_name(sig)
     return sig.split()[0] if sig.split() else sig
+
+
+def _macro_name(sig: str) -> str:
+    """The defined name in a ``\\`define NAME(args) body`` signature."""
+    rest = sig.strip()
+    head = rest.split(None, 1)
+    if head and head[0].lstrip("`").lower() == "define":
+        rest = head[1] if len(head) > 1 else ""
+    rest = rest.strip()
+    if not rest:
+        return sig.strip()
+    # The formal-argument list binds to the name with no space between them.
+    return rest.split("(", 1)[0].split()[0] if rest.split() else rest
+
+
+def _macro_tail(sig: str, name: str) -> str:
+    """Everything after the macro's name: its formals and any short body."""
+    rest = sig.strip()
+    idx = rest.find(name)
+    if idx == -1:
+        return ""
+    return rest[idx + len(name):].rstrip()
 
 
 def _signature_extra(sig: str, name: str, kind: str) -> str:

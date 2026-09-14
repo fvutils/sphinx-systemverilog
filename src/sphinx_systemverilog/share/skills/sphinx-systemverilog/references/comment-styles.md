@@ -171,6 +171,32 @@ function bit parity(bit [31:0] mask);
 
 ---
 
+## Code samples (every non-native dialect)
+
+End the introducing line with `::`, leave a blank line, indent the code:
+
+```systemverilog
+/**
+ * Presents a Python iterator as a valid/next pair, which maps onto a
+ * SystemVerilog while loop::
+ *
+ *     py_iter it = new(PyObject_GetIter(seq));
+ *     while (it.valid()) begin
+ *         py_object item = it.next();
+ *     end
+ */
+```
+
+Everything indented past the `::` line is verbatim: no escaping, no inline
+conversion, indentation and blank lines kept. So `#foo`, `<T>`, `~x~`, `*p` and
+a trailing `_` mean what they mean in code, not what they mean in the dialect.
+The block ends at the first line indented back to the introducing column.
+
+Markdown ```` ``` ```` fences do **not** work in any dialect — they render as a
+block quote and produce `ERROR: Unexpected indentation`.
+
+---
+
 ## `auto`
 
 Sniffs each comment individually — the right choice for a mixed tree (this

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from .comments import clean_comment_block, split_leading_trivia
+from .comments import clean_comment_block, doc_above_line, split_leading_trivia
 from .locations import is_real_location, macro_chain, resolve_location
 from .objects import (
     KIND_CLASS,
@@ -289,7 +289,7 @@ class ModelBuilder:
             name=sym.name,
             qualified_name=qname,
             location=resolve_location(sm, sym.location),
-            raw_doc=self._leading_doc(sym, include_inline=include_inline),
+            raw_doc=self._leading_doc(sym, include_inline=include_inline, sm=sm),
             doc_style=self.doc_style,
         )
         if class_sym is not None:
@@ -583,7 +583,9 @@ class ModelBuilder:
 
     # -- comment helpers ------------------------------------------------------
 
-    def _leading_doc(self, sym: Any, include_inline: bool = False) -> str | None:
+    def _leading_doc(
+        self, sym: Any, include_inline: bool = False, sm: Any = None
+    ) -> str | None:
         token = _decl_token(sym)
         if token is None:
             return None
@@ -593,7 +595,30 @@ class ModelBuilder:
         # doc block (it is the first line, ahead of any wrapped continuation).
         if include_inline and trailing_prev:
             leading = trailing_prev + leading
-        return clean_comment_block(leading)
+        doc = clean_comment_block(leading)
+        if doc is None and sm is not None:
+            doc = self._doc_from_text(sym, sm)
+        return doc
+
+    def _doc_from_text(self, sym: Any, sm: Any) -> str | None:
+        """Read the doc comment out of the source, for a macro-led declaration.
+
+        See :func:`~.comments.doc_above_line` for when the trivia route cannot
+        see it and why this is a fallback rather than the normal path.
+        """
+        location = getattr(sym, "location", None)
+        if location is None:
+            return None
+        try:
+            line = sm.getLineNumber(location)
+            text = sm.getSourceText(location.buffer)
+        except Exception:
+            return None
+        if not text or not line:
+            return None
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", "replace")
+        return clean_comment_block(doc_above_line(text, int(line)))
 
     def _trailing_for(self, sym: Any) -> list[str]:
         token = _decl_token(sym)

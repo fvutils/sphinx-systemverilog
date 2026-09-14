@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from sphinx_systemverilog.model import ModelBuilder
-from sphinx_systemverilog.model.comments import clean_comment_block
+from sphinx_systemverilog.model.comments import clean_comment_block, doc_above_line
 
 pytestmark = pytest.mark.unit
 
@@ -203,3 +203,47 @@ def test_adjacent_comment_still_wins_after_a_directive():
     )
 
     assert doc == "Documentation for m."
+
+
+# -- Macro-led declarations ---------------------------------------------------
+#
+# When the entity keyword arrives through a `define, the preprocessor consumes
+# the doc comment with the macro usage and the token the parser sees carries no
+# comment trivia at all.  The declaration's name is still at a real line, so the
+# comment is read back out of the source text.
+
+
+def test_doc_above_line_finds_a_block_comment():
+    text = "\n".join([
+        "`define ENTITY interface",       # 1
+        "/**",                            # 2
+        " * What it does.",               # 3
+        " */",                            # 4
+        "`ENTITY my_fifo;",               # 5
+    ])
+    assert doc_above_line(text, 5) == ["/**", " * What it does.", " */"]
+
+
+def test_doc_above_line_finds_a_run_of_line_comments():
+    text = "// first\n// second\n`ENTITY my_fifo;"
+    assert doc_above_line(text, 3) == ["// first", "// second"]
+
+
+def test_doc_above_line_stops_at_a_blank_line():
+    text = "// unrelated\n\n// mine\n`ENTITY my_fifo;"
+    assert doc_above_line(text, 4) == ["// mine"]
+
+
+def test_doc_above_line_returns_nothing_when_there_is_no_comment():
+    assert doc_above_line("module m;\nendmodule", 2) == []
+    assert doc_above_line("`ENTITY my_fifo;", 1) == []
+
+
+def test_doc_above_line_tolerates_an_out_of_range_line():
+    assert doc_above_line("one\ntwo", 99) == []
+    assert doc_above_line("", 0) == []
+
+
+def test_doc_above_line_ignores_an_unterminated_block():
+    # A `*/` with no opening `/*` above it is not a comment block.
+    assert doc_above_line(" */\n`ENTITY my_fifo;", 2) == []

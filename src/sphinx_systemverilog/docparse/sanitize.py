@@ -36,6 +36,14 @@ RST once it is nested inside a directive body:
 Both are applied by the dialects whose sources are not RST (NaturalDocs,
 Doxygen, plain).  The native dialect is left alone: there the comment body is
 RST by definition, and its indentation is meaningful.
+
+``literal_line_mask``
+    The exception to both.  A doc comment may still contain one construct whose
+    indentation *is* meaningful -- an RST literal block, introduced by ``::`` --
+    and the repairs above would destroy it: the folder reads the indented code
+    as continuation lines and joins them, and the dedent leaves docutils with no
+    indented block to find ("Literal block expected; none found").  The mask
+    marks those lines so every pass leaves them exactly as typed.
 """
 
 from __future__ import annotations
@@ -66,10 +74,79 @@ def is_list_item(line: str) -> bool:
     return _LIST_ITEM_RE.match(line) is not None
 
 
+def opens_literal_block(line: str) -> bool:
+    """True if ``line`` ends a paragraph with the RST literal-block marker."""
+    return line.rstrip().endswith("::")
+
+
+def literal_line_mask(text: str) -> list[bool]:
+    """Mark the lines of *text* that belong to an RST literal block.
+
+    A line ending in ``::`` opens one; every following line indented past it
+    belongs to it, including the blank lines between its paragraphs.  The block
+    ends at the first line indented back to the opener's column or further left,
+    and that line is itself tested for opening the next one.
+
+    The mask is what lets the repairs below -- and the inline escaper -- leave a
+    code sample exactly as its author typed it.  Everything they do to prose is
+    wrong for code: folding its continuation lines destroys the indentation that
+    makes it a block, dedenting it stops docutils recognising it at all, and
+    escaping ``*`` or a trailing ``_`` puts backslashes into the rendered
+    listing.
+    """
+    lines = text.split("\n")
+    mask = [False] * len(lines)
+    opener: int | None = None
+    blanks: list[int] = []
+    for idx, line in enumerate(lines):
+        if not line.strip():
+            # Deferred: a blank belongs to the block only if the block resumes.
+            if opener is not None:
+                blanks.append(idx)
+            continue
+        indent = len(line) - len(line.lstrip())
+        if opener is not None and indent > opener:
+            for blank in blanks:
+                mask[blank] = True
+            mask[idx] = True
+            blanks.clear()
+            continue
+        blanks.clear()
+        opener = indent if opens_literal_block(line) else None
+    return mask
+
+
+def reintroduce_literal_block(summary: list[str], body: list[str]) -> list[str]:
+    """Re-open a literal block that summary extraction left orphaned.
+
+    The dialects take a comment's first paragraph as the summary and render it
+    apart from the body.  When that paragraph is the one ending in ``::``, the
+    indented block it introduced is now the first thing in the body with nothing
+    above it -- docutils reads it as a block quote and warns about unexpected
+    indentation.  Putting RST's bare ``::`` marker back at the head of the body
+    restores the block; the marker itself renders as nothing.
+    """
+    if not body or not summary:
+        return body
+    if not opens_literal_block(summary[-1]):
+        return body
+    first = next((ln for ln in body if ln.strip()), "")
+    if not first.startswith((" ", "\t")):
+        return body
+    return ["::", ""] + body
+
+
 def strip_rules(text: str) -> str:
-    """Drop banner-rule lines, leaving the surrounding blank-line structure."""
+    """Drop banner-rule lines, leaving the surrounding blank-line structure.
+
+    Lines inside a literal block are kept: ``// ------`` in a code sample is
+    part of the sample.
+    """
+    literal = literal_line_mask(text)
     return "\n".join(
-        line for line in text.splitlines() if not _RULE_RE.match(line)
+        line
+        for line, is_literal in zip(text.split("\n"), literal)
+        if is_literal or not _RULE_RE.match(line)
     )
 
 
@@ -81,9 +158,13 @@ def unwrap_continuations(text: str) -> str:
     the current logical line continues it -- unless it opens a list item, which
     always starts a new logical line.  List runs are then dedented to their
     lead-in and blank-line separated so docutils sees a list.
+
+    Literal blocks are exempt and pass through verbatim; see
+    :func:`literal_line_mask`.
     """
     out: list[str] = []
     block: list[str] = []
+    literal = literal_line_mask(text)
 
     def flush() -> None:
         if not block:
@@ -91,8 +172,13 @@ def unwrap_continuations(text: str) -> str:
         out.extend(_render_block(block))
         block.clear()
 
-    for line in text.splitlines():
-        if line.strip():
+    for line, is_literal in zip(text.split("\n"), literal):
+        if is_literal:
+            # Verbatim, and at its original indentation: both are what make it
+            # a literal block to docutils.
+            flush()
+            out.append(line)
+        elif line.strip():
             block.append(line)
         else:
             flush()

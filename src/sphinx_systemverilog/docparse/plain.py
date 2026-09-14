@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from .base import DocstringParser, ParsedDoc, register_parser
 from .inline import escape_rst_inline
-from .sanitize import sanitize_prose
+from .sanitize import reintroduce_literal_block, sanitize_prose
 
 
 class PlainParser(DocstringParser):
@@ -26,13 +26,15 @@ class PlainParser(DocstringParser):
         if not text.strip():
             return ParsedDoc()
 
-        lines = [escape_rst_inline(line) for line in text.splitlines()]
+        lines = escape_rst_inline(text).split("\n")
         summary_lines: list[str] = []
         idx = 0
         while idx < len(lines) and lines[idx].strip():
             summary_lines.append(lines[idx].strip())
             idx += 1
-        body = "\n".join(lines[idx:]).strip("\n")
+        body = "\n".join(
+            reintroduce_literal_block(summary_lines, lines[idx:])
+        ).strip("\n")
         return ParsedDoc(summary=" ".join(summary_lines).strip(), body=body)
 
     def matches(self, raw: str) -> bool:

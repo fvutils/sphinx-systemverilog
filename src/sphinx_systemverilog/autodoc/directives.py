@@ -18,7 +18,7 @@ from docutils.statemachine import StringList
 from sphinx.util import logging
 from sphinx.util.nodes import nested_parse_with_titles
 
-from .documenters import SvDocumenter
+from .documenters import SvDocumenter, is_ignored_macro_content
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,11 @@ class AutoSvDirective(Directive):
     #: Restrict the resolved object to this kind (None = any).
     object_kind: str | None = None
 
+    #: Kinds this directive also accepts, beyond :attr:`object_kind`.  A
+    #: hardware entity is a module, an interface or a program depending on a
+    #: keyword, and which one a design uses is not a documentation choice.
+    also_accepts: tuple[str, ...] = ()
+
     def run(self) -> list[nodes.Node]:
         env = self.state.document.settings.env
         app = env.app
@@ -146,7 +151,9 @@ class AutoSvDirective(Directive):
                     location=(env.docname, self.lineno),
                 )
             return []
-        if self.object_kind and obj.kind != self.object_kind:
+        if self.object_kind and obj.kind not in (
+            self.object_kind, *self.also_accepts
+        ):
             logger.warning(
                 "sphinx-systemverilog: %r is a %s, not a %s",
                 target, obj.kind, self.object_kind, type="systemverilog",
@@ -193,6 +200,10 @@ class AutoSvClassDirective(AutoSvDirective):
 
 class AutoSvModuleDirective(AutoSvDirective):
     object_kind = "module"
+    # An interface and a program have ports and parameters and are instantiated
+    # exactly as a module is, and this is the directive the documentation points
+    # at for all three.
+    also_accepts = ("interface", "program")
 
 
 class AutoSvFunctionDirective(AutoSvDirective):
@@ -218,6 +229,9 @@ class AutoSvSummaryDirective(Directive):
     option_spec = {
         "members": _members_option,
         "undoc-members": directives.flag,
+        # Include objects a ``sv_ignore_macro_content`` macro generated, both
+        # as members and as selectable top-level objects.
+        "macro-members": directives.flag,
         "member-order": lambda a: directives.choice(a, ("source", "alpha", "groups")),
         "packages": _names_option,
         "kinds": _names_option,
@@ -257,6 +271,14 @@ class AutoSvSummaryDirective(Directive):
         else:
             candidates = list(index.roots)
 
+        # A macro that emits a whole class is the same boilerplate as one that
+        # emits a method, so the member filter's list applies here too.  Naming
+        # an object exactly still wins, as it does for `:members:`.
+        ignore_macros = SvDocumenter.resolve_ignore_macros(
+            env.config.sv_ignore_macro_content
+        )
+        show_macro_content = "macro-members" in self.options
+
         roots = []
         for obj in candidates:
             qn = obj.qualified_name or obj.name
@@ -269,6 +291,12 @@ class AutoSvSummaryDirective(Directive):
             if glob and not fnmatch.fnmatch(obj.name, glob):
                 continue
             if files and not _matches_files(obj, files):
+                continue
+            if (
+                not show_macro_content
+                and glob != obj.name
+                and is_ignored_macro_content(obj, ignore_macros)
+            ):
                 continue
             roots.append(obj)
 

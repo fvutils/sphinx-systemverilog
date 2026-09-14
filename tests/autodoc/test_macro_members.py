@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from sphinx_systemverilog.autodoc.documenters import SvDocumenter
+from types import SimpleNamespace
+
+from sphinx_systemverilog.autodoc.documenters import (
+    SvDocumenter,
+    is_ignored_macro_content,
+)
 from tests.conftest import uvm_stub_index
 
 MINI = ["mini_*_utils"]
@@ -218,3 +223,30 @@ def test_new_on_a_non_uvm_class_is_untouched():
     doc = SvDocumenter(_App(), {"members": True, "undoc-members": True}, "native")
 
     assert "new" in " ".join(_members(doc.render(cls)))
+
+
+# -- Top-level selection ------------------------------------------------------
+#
+# A macro that emits a whole class is the same boilerplate as one that emits a
+# method, so `autosvsummary` applies the same filter when choosing what to
+# document.  Without this a project that hid the members still got a page full
+# of the classes.
+
+
+def test_is_ignored_macro_content_matches_any_name_in_the_chain():
+    obj = SimpleNamespace(from_macros=("inner_registry", "mini_component_utils"))
+    assert is_ignored_macro_content(obj, MINI)
+    assert not is_ignored_macro_content(obj, ["other_*"])
+
+
+def test_is_ignored_macro_content_is_false_for_hand_written_code():
+    assert not is_ignored_macro_content(SimpleNamespace(from_macros=()), MINI)
+
+
+def test_resolve_ignore_macros_applies_the_uvm_default_for_none():
+    from sphinx_systemverilog.model.uvm import UVM_BOILERPLATE_MACROS
+
+    assert SvDocumenter.resolve_ignore_macros(None) == tuple(UVM_BOILERPLATE_MACROS)
+    # An explicit empty list means "document everything", not "use the default".
+    assert SvDocumenter.resolve_ignore_macros([]) == ()
+    assert SvDocumenter.resolve_ignore_macros(MINI) == tuple(MINI)

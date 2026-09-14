@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from sphinx_systemverilog.docparse.sanitize import (
+    literal_line_mask,
+    reintroduce_literal_block,
     sanitize_prose,
     strip_rules,
     unwrap_continuations,
@@ -170,3 +172,80 @@ def test_blocks_are_independent():
         "",
         "Second folded",
     ]
+
+
+# -- Literal blocks -----------------------------------------------------------
+#
+# The repairs above are wrong for code, so everything under a ``::`` is exempt.
+
+
+def test_mask_marks_the_indented_block_and_not_its_opener():
+    # split("\n") on a newline-terminated comment yields a trailing "".
+    text = "Lead in::\n\n    code();\n\nAfter\n"
+    assert literal_line_mask(text) == [False, True, True, False, False, False]
+
+
+def test_mask_ends_the_block_at_the_openers_column():
+    text = "Lead in::\n    code();\nAfter\n"
+    assert literal_line_mask(text) == [False, True, False, False]
+
+
+def test_mask_spans_blank_lines_inside_the_block():
+    text = "Lead in::\n\n    first();\n\n    second();\n\nAfter\n"
+    assert literal_line_mask(text)[1:5] == [True, True, True, True]
+
+
+def test_mask_does_not_mark_trailing_blanks_after_the_block():
+    text = "Lead in::\n\n    code();\n\nAfter\n"
+    assert literal_line_mask(text)[3] is False
+
+
+def test_mask_handles_a_second_block():
+    text = "One::\n\n    a();\n\nTwo::\n\n    b();\n"
+    assert literal_line_mask(text) == [
+        False, True, True, False, False, True, True, False,
+    ]
+
+
+def test_mask_respects_the_openers_own_indentation():
+    # An indented opener: only lines indented past *it* are its block.
+    text = "  Lead in::\n\n      code();\n  After\n"
+    assert literal_line_mask(text) == [False, True, True, False, False]
+
+
+def test_unwrap_keeps_a_literal_block_verbatim():
+    text = "Lead in::\n\n    if (x) begin\n        y();\n    end\n"
+    assert unwrap_continuations(text).splitlines() == [
+        "Lead in::",
+        "",
+        "    if (x) begin",
+        "        y();",
+        "    end",
+    ]
+
+
+def test_unwrap_still_folds_prose_around_a_literal_block():
+    text = "Lead in::\n\n    code();\n\nAfter\n   folded\n"
+    assert sanitize_prose(text).splitlines() == [
+        "Lead in::",
+        "",
+        "    code();",
+        "",
+        "After folded",
+    ]
+
+
+def test_strip_rules_keeps_a_rule_inside_a_literal_block():
+    # `// -------` is a banner in prose and a comment in a code sample.
+    text = "Lead in::\n\n    // --------\n    code();\n"
+    assert "// --------" in strip_rules(text)
+
+
+def test_reintroduce_puts_the_marker_back_when_the_summary_took_it():
+    body = reintroduce_literal_block(["Lead in::"], ["    code();"])
+    assert body == ["::", "", "    code();"]
+
+
+def test_reintroduce_leaves_an_ordinary_body_alone():
+    assert reintroduce_literal_block(["Summary."], ["Body."]) == ["Body."]
+    assert reintroduce_literal_block(["Lead in::"], ["Body."]) == ["Body."]

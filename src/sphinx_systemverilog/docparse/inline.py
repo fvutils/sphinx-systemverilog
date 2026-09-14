@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from .sanitize import match_list_item
+from .sanitize import literal_line_mask, match_list_item
 
 # A NaturalDocs <reference>: an identifier, scoped name, or method-ish token.
 # Deliberately conservative so prose like "a < b" or generics are left alone.
@@ -59,8 +59,15 @@ def escape_rst_inline(text: str) -> str:
     Doxygen dialect escapes *before* :func:`~.sanitize.sanitize_prose` runs, so
     the marker has to still be there when the folder looks for it.  Everything
     after the marker -- and every non-leading ``*`` in prose -- escapes as before.
+
+    Lines inside a literal block are left alone: they are code, and a backslash
+    escape would be rendered rather than consumed.
     """
-    return "\n".join(_escape_line(line) for line in text.split("\n"))
+    literal = literal_line_mask(text)
+    return "\n".join(
+        line if is_literal else _escape_line(line)
+        for line, is_literal in zip(text.split("\n"), literal)
+    )
 
 
 def _escape_line(line: str) -> str:
@@ -71,8 +78,17 @@ def _escape_line(line: str) -> str:
 
 
 def convert_inline(text: str) -> str:
-    """Apply all NaturalDocs inline conversions (escaping stray RST first)."""
-    return convert_angle_xrefs(convert_tilde_code(escape_rst_inline(text)))
+    """Apply all NaturalDocs inline conversions (escaping stray RST first).
+
+    Literal-block lines are passed through: ``~`` and ``<...>`` inside a code
+    sample are the language's own syntax, not NaturalDocs markup.
+    """
+    literal = literal_line_mask(text)
+    escaped = escape_rst_inline(text).split("\n")
+    return "\n".join(
+        line if is_literal else convert_angle_xrefs(convert_tilde_code(line))
+        for line, is_literal in zip(escaped, literal)
+    )
 
 
 def collect_angle_xrefs(text: str) -> list[str]:

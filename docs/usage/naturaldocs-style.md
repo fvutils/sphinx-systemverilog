@@ -88,6 +88,13 @@ and is left alone, which matters because UVM has 236 of those and only two real
 Stray RST characters in prose are escaped automatically, so comments written
 for NaturalDocs render cleanly without RST surprises.
 
+## Code samples
+
+As in the [Doxygen dialect](doxygen-code-samples): end the introducing line with
+`::`, leave a blank line, and indent the code. The block is passed through
+verbatim, and the conversions above do not apply inside it — `<T>` in a code
+sample is a type parameter, not a cross-reference.
+
 ## Lists
 
 Bullet (`*`, `-`, `+`) and enumerated (`1.`, `a)`) lists are preserved. The

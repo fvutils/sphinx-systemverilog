@@ -11,7 +11,14 @@ precedes them. They appear as `sv:macro` objects and can be documented with
    :kinds: macro
 ```
 
-Each macro shows its definition (name, formal arguments, and a short body).
+Each macro shows its definition (name, formal arguments, and a short body):
+
+```{eval-rst}
+.. autosvsummary::
+   :kinds: macro
+   :files: macros.svh
+```
+
 Disable macro extraction with:
 
 ```python

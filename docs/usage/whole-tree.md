@@ -25,6 +25,7 @@ that the extension found in `sv_source_dirs` / `sv_build_units`.
 | `:files:` | restrict to declarations from source files matching a path glob |
 | `:exclude:` | drop the named objects |
 | `:members:` / `:undoc-members:` / `:member-order:` | as for `autosvclass` |
+| `:macro-members:` | include objects a [filtered macro](macro-generated-members) generated |
 | `:doc-style:` | dialect override |
 | `:optional:` | render nothing, silently, when the scope selects nothing |
 

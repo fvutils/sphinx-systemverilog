@@ -313,3 +313,46 @@ def strip_license_preamble(lines: list[str]) -> list[str]:
     if index == 0 or not saw_strong:
         return lines
     return lines[index:]
+
+
+def doc_above_line(text: str, line: int) -> list[str]:
+    """The comment block ending on the line above 1-based *line* in *text*.
+
+    A fallback for a declaration whose keyword arrived through a macro.  When
+    source reads::
+
+        `define ENTITY_TYPE interface
+        /** What this interface is for. */
+        `ENTITY_TYPE my_fifo #(...) (...);
+
+    the preprocessor consumes the comment along with the macro usage, and the
+    ``interface`` token the parser sees carries only ``Directive`` trivia -- so
+    the trivia route finds nothing to attach.  The declaration's *name* is still
+    at a real source line, which is enough to go back to the text and read what
+    the author wrote above it.
+
+    Scanning text is a last resort, not the normal path: it cannot tell a
+    comment from an identical string literal, and it does not know about
+    conditional compilation.  It runs only when the trivia route came back
+    empty, so neither risk applies to a declaration the parser saw intact.
+    """
+    lines = text.split("\n")
+    idx = line - 2                      # 0-based index of the preceding line
+    if idx < 0 or idx >= len(lines):
+        return []
+
+    stripped = lines[idx].strip()
+    if stripped.endswith("*/"):
+        block: list[str] = []
+        while idx >= 0:
+            block.insert(0, lines[idx])
+            if "/*" in lines[idx]:
+                return block
+            idx -= 1
+        return []                       # unterminated: not a comment block
+
+    block = []
+    while idx >= 0 and lines[idx].strip().startswith("//"):
+        block.insert(0, lines[idx])
+        idx -= 1
+    return block

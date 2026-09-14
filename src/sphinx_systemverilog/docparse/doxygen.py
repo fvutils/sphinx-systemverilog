@@ -13,7 +13,7 @@ import re
 
 from .base import DocField, DocstringParser, ParsedDoc, register_parser
 from .inline import escape_rst_inline
-from .sanitize import sanitize_prose
+from .sanitize import literal_line_mask, reintroduce_literal_block, sanitize_prose
 
 # A command line: ``@cmd`` or ``\cmd`` followed by its argument(s).
 _CMD_RE = re.compile(r"^[@\\](\w+)\b[ \t]*(.*)$")
@@ -62,7 +62,16 @@ class DoxygenParser(DocstringParser):
         saw_brief = False
         current_field: DocField | None = None
 
-        for line in text.splitlines():
+        # Computed up front, on the raw text: this dialect converts inline
+        # markup line by line *before* sanitize_prose runs, so it has to know
+        # which lines are code at that point rather than afterwards.
+        literal = literal_line_mask(text)
+
+        for line, is_literal in zip(text.split("\n"), literal):
+            if is_literal and current_field is None:
+                # Code: no escaping, no xref substitution, indentation kept.
+                target.append(line)
+                continue
             if not line.strip():
                 # A blank line ends the @brief paragraph and any open field.
                 current_field = None
@@ -102,6 +111,7 @@ class DoxygenParser(DocstringParser):
         # Without an explicit @brief, the first paragraph of body is the summary.
         if not saw_brief:
             brief, body = _split_first_paragraph(body)
+            body = reintroduce_literal_block(brief, body)
 
         summary = " ".join(s.strip() for s in brief if s.strip()).strip()
         # Doxygen prose is not RST either: repair banner rules and aligned
