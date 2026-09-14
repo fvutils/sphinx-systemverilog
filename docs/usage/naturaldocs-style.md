@@ -95,5 +95,17 @@ document (UVM puts `extern` prototypes and `@uvm-ieee` annotations in between).
 The extension scans every comment block and associates each with its symbol by
 name and source proximity, so detached blocks are found correctly.
 
+Association is confined to the declaration's **own file**. Names like `new`,
+`create` and `get_type_name` recur in dozens of UVM files, and line numbers are
+only comparable within one file, so a block in `uvm_printer.svh` is never a
+candidate for a member of your testbench. A member with no block in its own file
+is reported as undocumented — which is what `:undoc-members:` and
+[`sv_uvm_hide_trivial_new`](#uvm-constructors) act on.
+
+Within one file, collisions between a `pure virtual` prototype and a
+same-named override in a later class are still resolved by proximity alone, so a
+prototype can pick up the override's prose. This affects libraries that declare
+both in one file (UVM does); it cannot pull prose onto your code.
+
 `Group:` headers partition a class's members into labeled sections, which render
 as subsection rubrics in the output.

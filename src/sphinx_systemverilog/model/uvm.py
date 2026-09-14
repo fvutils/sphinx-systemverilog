@@ -102,6 +102,28 @@ _ERROR_TYPE = "<error>"
 #: ``None`` means "use this"; an empty list means "stop at nothing".
 DEFAULT_BLACKBOX_BASES = ("uvm_reg_block",)
 
+#: Macros whose *content* is registration boilerplate rather than API, matched
+#: (as ``fnmatch`` globs, against every name in a member's expansion chain) by
+#: ``sv_ignore_macro_content``.  Referenced by ``config.py`` so the shipped
+#: default and this list cannot drift apart, and re-exported from the package
+#: root so a project can extend rather than restate it::
+#:
+#:     from sphinx_systemverilog import UVM_BOILERPLATE_MACROS
+#:     sv_ignore_macro_content = [*UVM_BOILERPLATE_MACROS, "my_reg_field_decl"]
+#:
+#: Globs rather than exact names because the utils family has a dozen spellings
+#: (``_begin``, ``_param_``, ``_end``) and enumerating them is a list that goes
+#: stale with the next UVM release.  Everything here declares members whose
+#: prose would be identical on every class in the testbench --- ``get_type``,
+#: ``create``, ``get_type_name``, the field-automation hooks --- which is the
+#: test for adding to it.
+UVM_BOILERPLATE_MACROS = (
+    "uvm_*_utils",
+    "uvm_*_utils_begin",
+    "uvm_field_*",
+    "uvm_*_imp_decl",
+)
+
 #: Classes whose static ``set``/``get`` are configuration-database accesses.
 #: Matched against the *lexical* path of the called subroutine
 #: (``mini_uvm_pkg::uvm_config_db::set``), so a specialization's parameters do

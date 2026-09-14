@@ -71,6 +71,13 @@ class SvObject:
     children: list["SvObject"] = field(default_factory=list)
     #: Fully-qualified name within the index (e.g. ``my_pkg::my_class``).
     qualified_name: str | None = None
+    #: Macro expansion this declaration came out of, innermost first, ending at
+    #: the name actually written in the source.  ``\`uvm_component_utils`` yields
+    #: ``("m_uvm_component_registry_internal", "uvm_component_utils")``.  Empty
+    #: for anything hand-written, which is the discriminator autodoc needs: a
+    #: macro-generated member is textually *in* the class but was never authored
+    #: there, so ``extends``/own-member tests cannot tell the two apart.
+    from_macros: tuple[str, ...] = ()
 
     @property
     def is_scope(self) -> bool:

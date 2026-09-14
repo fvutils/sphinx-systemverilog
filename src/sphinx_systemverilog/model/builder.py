@@ -12,7 +12,7 @@ import re
 from typing import Any, Iterable
 
 from .comments import clean_comment_block, split_leading_trivia
-from .locations import is_real_location, resolve_location
+from .locations import is_real_location, macro_chain, resolve_location
 from .objects import (
     KIND_CLASS,
     KIND_CONSTRAINT,
@@ -314,6 +314,7 @@ class ModelBuilder:
             child = self._build_symbol(sym, sm, qname)
             if child is None:
                 continue
+            child.from_macros = macro_chain(sm, getattr(sym, "location", None))
             members.append(child)
             trailing.append(self._trailing_for(sym))
 
@@ -409,6 +410,7 @@ class ModelBuilder:
         members: list[SvObject] = []
         for item in getattr(syntax, "items", []) or []:
             tn = type(item).__name__
+            first = len(members)
             try:
                 if "PropertyDeclaration" in tn:
                     members.extend(self._cst_property(item, sm, qname))
@@ -420,6 +422,12 @@ class ModelBuilder:
                     )
             except Exception:
                 continue
+            # A parameterized class gets the same `uvm_*_utils treatment as any
+            # other, so provenance has to be recorded on this path too.
+            chain = _cst_macro_chain(item, sm)
+            for member in members[first:]:
+                if member is not None:
+                    member.from_macros = chain
         return [m for m in members if m is not None]
 
     def _cst_property(self, item: Any, sm: Any, qname: str) -> list[SvObject]:
@@ -609,6 +617,14 @@ def _iter_scope(scope: Any) -> Iterable[Any]:
         return list(scope)
     except TypeError:
         return []
+
+
+def _cst_macro_chain(item: Any, sm: Any) -> tuple[str, ...]:
+    """:func:`macro_chain` for a CST node, via its first token's location."""
+    try:
+        return macro_chain(sm, item.getFirstToken().location)
+    except Exception:
+        return ()
 
 
 def _has_real_location(sym: Any, sm: Any) -> bool:

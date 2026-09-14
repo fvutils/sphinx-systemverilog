@@ -30,6 +30,36 @@ def is_real_location(source_manager: Any, location: Any) -> bool:
     return bool(file_name) and line > 0
 
 
+#: Ceiling on the expansion climb.  A macro that expands to itself is a
+#: preprocessor error slang reports on its own; a documentation build must not
+#: hang deciding whether to print a member.
+_MAX_EXPANSION_DEPTH = 32
+
+
+def macro_chain(source_manager: Any, location: Any) -> tuple[str, ...]:
+    """Names of the macro expansions *location* sits inside, innermost first.
+
+    The last element is the macro as written in the source, which is the only
+    name a user could reasonably put in a config list: the innermost name for a
+    ``\\`uvm_component_utils`` member is ``m_uvm_component_registry_internal``.
+    Returns ``()`` for a hand-written location.
+    """
+    if location is None:
+        return ()
+    names: list[str] = []
+    try:
+        for _ in range(_MAX_EXPANSION_DEPTH):
+            if not source_manager.isMacroLoc(location):
+                break
+            name = source_manager.getMacroName(location)
+            if name:
+                names.append(str(name))
+            location = source_manager.getExpansionLoc(location)
+    except Exception:
+        return tuple(names)
+    return tuple(names)
+
+
 def resolve_location(source_manager: Any, location: Any) -> SourceRef | None:
     """Resolve a pyslang ``SourceLocation`` to a :class:`SourceRef`.
 

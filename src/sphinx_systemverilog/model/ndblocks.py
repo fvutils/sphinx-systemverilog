@@ -6,9 +6,10 @@ comments and blank lines.  This module scans the whole token stream of a syntax
 tree, collects every comment block that begins with an ND header, and indexes
 them by name so the builder can associate them with symbols.
 
-Name collisions across scopes (e.g. ``get_name`` in many classes) are resolved
-by source-line proximity: a symbol picks the same-named block nearest to - and
-at or above - its own declaration line.
+Name collisions are everywhere - ``get_name`` and ``new`` occur in dozens of UVM
+classes - so a lookup is scoped to the declaration's own file, and within that
+file resolved by source-line proximity: a symbol picks the same-named block
+nearest to, and preferably at or above, its own declaration line.
 """
 
 from __future__ import annotations
@@ -64,14 +65,26 @@ class NDBlockIndex:
     def lookup(
         self, name: str, line: int | None, file: str | None = None
     ) -> NDBlock | None:
-        """Best ND block for *name*, in *file*, nearest to *line*."""
+        """Best ND block for *name*, in *file*, nearest to *line*.
+
+        *file* is a hard filter, not a preference.  A comment block is part of a
+        file, so one in ``uvm_printer.svh`` cannot document a member declared in
+        the user's testbench --- and because line numbers are per-file, the
+        proximity tie-break below has no meaning across files, so falling back
+        to another file's block means picking an arbitrary same-named one.
+        Against real UVM that misattributed 971 of 2282 matches, putting the
+        library's prose for ``type_name`` and ``create`` on every registered
+        class in the testbench.  No block is the right answer instead: an
+        undocumented member is undocumented, and downstream filters
+        (``undoc-members``, ``sv_uvm_hide_trivial_new``) depend on being told so.
+        """
         candidates = self._by_name.get(name)
         if not candidates:
             return None
         if file is not None:
-            same = [b for b in candidates if b.file == file]
-            if same:
-                candidates = same
+            candidates = [b for b in candidates if b.file == file]
+            if not candidates:
+                return None
         if line is None or len(candidates) == 1:
             return candidates[0]
 

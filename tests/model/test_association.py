@@ -85,6 +85,57 @@ def test_name_collision_resolved_by_proximity():
     assert "The B f." in next(m for m in b.children if m.name == "f").raw_doc
 
 
+def test_a_block_never_documents_a_declaration_in_another_file(tmp_path):
+    """File scope is a hard filter: a library's prose must not leak onto a user
+    class that happens to reuse a method name.
+
+    Line numbers are per-file, so the proximity tie-break has no meaning across
+    files and the fallback amounted to picking an arbitrary same-named block.
+    Against real UVM this misattributed 971 of 2282 matches --- every registered
+    class in the testbench got uvm_printer's prose for ``type_name``.
+    """
+    lib = tmp_path / "lib_pkg.sv"
+    lib.write_text("""
+    package lib_pkg;
+      class lib_base;
+        // Function: run
+        //
+        // Prose belonging to the library.
+        extern virtual function void run();
+      endclass
+    endpackage
+    """)
+    user = tmp_path / "user_pkg.sv"
+    user.write_text("""
+    package user_pkg;
+      class user_thing;
+        extern virtual function void run();
+      endclass
+    endpackage
+    """)
+
+    roots = ModelBuilder(doc_style="naturaldocs").build_from_files([lib, user])
+    by_name = {r.name: r for r in roots}
+    lib_run = _m(_m(by_name["lib_pkg"], "lib_base"), "run")
+    user_run = _m(_m(by_name["user_pkg"], "user_thing"), "run")
+
+    assert "belonging to the library" in lib_run.raw_doc
+    # Undocumented is the correct answer, and the honest one: ``undoc-members``
+    # and ``sv_uvm_hide_trivial_new`` both depend on being told so.
+    assert user_run.raw_doc is None
+
+
+def test_lookup_scopes_to_the_declarations_file():
+    """The filter directly, without a parse in the way."""
+    from sphinx_systemverilog.model.ndblocks import NDBlock, NDBlockIndex
+
+    index = NDBlockIndex()
+    index.add(NDBlock("function", "new", False, "Library prose.", 10, "lib.svh"))
+
+    assert index.lookup("new", 400, "tb.sv") is None
+    assert index.lookup("new", 12, "lib.svh").raw == "Library prose."
+
+
 def test_nodocs_skip_policy():
     code = """
     package p;

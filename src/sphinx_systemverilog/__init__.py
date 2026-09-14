@@ -9,6 +9,26 @@ from typing import Any
 
 from .__version__ import __version__
 
+__all__ = ["__version__", "UVM_BOILERPLATE_MACROS", "setup"]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily re-export :data:`~.model.uvm.UVM_BOILERPLATE_MACROS`.
+
+    So a ``conf.py`` can extend the shipped default rather than restate it::
+
+        sv_ignore_macro_content = [*UVM_BOILERPLATE_MACROS, "my_reg_field_decl"]
+
+    Resolved on attribute access, not at import: every other import in this
+    module is deferred into :func:`setup` so that importing the package does not
+    drag in pyslang, and a convenience constant is not worth giving that up.
+    """
+    if name == "UVM_BOILERPLATE_MACROS":
+        from .model.uvm import UVM_BOILERPLATE_MACROS
+
+        return UVM_BOILERPLATE_MACROS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 def _build_index(app: Any) -> None:
     """Build the project-wide source index once per Sphinx build.
