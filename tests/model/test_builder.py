@@ -150,3 +150,22 @@ def test_build_from_files(tmp_path):
     roots = ModelBuilder().build_from_files([str(src)])
     assert roots[0].name == "p"
     assert _find(roots[0], "c") is not None
+
+
+def test_parameter_statement_with_several_declarators():
+    # A CST separated list yields its comma tokens when iterated; they must be
+    # skipped rather than treated as declarators.
+    (mod,) = ModelBuilder().build_from_text(
+        "module m #(parameter A = 1, B = 2) (input logic a); endmodule"
+    )
+    assert [(c.kind, c.name) for c in mod.children] == [
+        ("parameter", "A"), ("parameter", "B"), ("port", "a"),
+    ]
+
+
+def test_parameterized_class_property_with_several_declarators():
+    (pkg,) = ModelBuilder().build_from_text(
+        "package p; class c #(int N = 1); int x, y; endclass endpackage"
+    )
+    (cls,) = pkg.children
+    assert [c.name for c in cls.children] == ["x", "y"]

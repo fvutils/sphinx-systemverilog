@@ -35,6 +35,7 @@ from .objects import (
 # pyslang imports are kept local to this module (the pyslang isolation boundary).
 import pyslang
 from pyslang.ast import Compilation, SymbolKind
+from pyslang.parsing import Token
 from pyslang.syntax import SyntaxTree
 
 
@@ -434,7 +435,7 @@ class ModelBuilder:
         out: list[SvObject] = []
         decl = getattr(item, "declaration", item)
         doc = _token_leading_doc(item.getFirstToken())
-        for declarator in getattr(decl, "declarators", []) or []:
+        for declarator in _syntax_elements(getattr(decl, "declarators", None)):
             name = declarator.name.valueText
             out.append(SvObject(
                 kind=KIND_PROPERTY, name=name, qualified_name=_join(qname, name),
@@ -483,7 +484,7 @@ class ModelBuilder:
                 continue
             sig = _node_source(decl, sm)
             trailing_prev, leading = split_leading_trivia(decl.getFirstToken())
-            for declarator in getattr(decl, "declarators", []) or []:
+            for declarator in _syntax_elements(getattr(decl, "declarators", None)):
                 name = declarator.name.valueText
                 params.append(
                     SvObject(
@@ -844,6 +845,15 @@ def _token_leading_doc(token: Any, include_inline: bool = False) -> str | None:
     if include_inline and not leading and trailing_prev:
         leading = trailing_prev
     return clean_comment_block(leading)
+
+
+def _syntax_elements(seplist: Any) -> list[Any]:
+    """The elements of a CST separated list, without its separator tokens.
+
+    Iterating a pyslang ``SeparatedSyntaxList`` yields the comma tokens between
+    elements as well as the elements themselves.
+    """
+    return [e for e in seplist or [] if not isinstance(e, Token)]
 
 
 def _name_text(name_node: Any) -> str | None:
