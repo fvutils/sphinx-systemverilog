@@ -177,6 +177,7 @@ def build_index(
     uvm_blackbox: Iterable[str] | None = None,
     uvm_blackbox_bases: Iterable[str] | None = None,
     uvm_max_components: int = DEFAULT_MAX_COMPONENTS,
+    compilation_flags: Iterable[str] | None = None,
     use_cache: bool = True,
 ) -> SvIndex:
     """Build an :class:`SvIndex` from the configured sources.
@@ -202,7 +203,7 @@ def build_index(
         tuple(sorted((defines or {}).items())), nodocs_policy, document_macros,
         tuple(structure_tops or ()), structure_max_instances,
         uvm_root, tuple(uvm_blackbox or ()), tuple(uvm_blackbox_bases or ()),
-        uvm_max_components,
+        uvm_max_components, tuple(compilation_flags or ()),
         mtimes,
     )
     if use_cache and key in _INDEX_CACHE:
@@ -214,6 +215,7 @@ def build_index(
         defines=defines,
         nodocs_policy=nodocs_policy,
         document_macros=document_macros,
+        compilation_flags=compilation_flags,
     )
     index = SvIndex()
     if files:

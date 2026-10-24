@@ -56,6 +56,7 @@ def _build_index(app: Any) -> None:
         uvm_blackbox=config.sv_uvm_blackbox,
         uvm_blackbox_bases=config.sv_uvm_blackbox_bases,
         uvm_max_components=config.sv_uvm_max_components,
+        compilation_flags=config.sv_compilation_flags,
     )
     app.env.sv_index = index
     logger.info(

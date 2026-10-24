@@ -63,5 +63,6 @@ python -c "from sphinx_systemverilog.skills import get_skill_dirs; print(get_ski
 | `sv_include_dirs` | `[]` | Additional `+incdir` paths for the parser. |
 | `sv_defines` | `{}` | Preprocessor `` `define `` values for elaboration. |
 | `sv_build_units` | `[]` | Explicit root files to parse (instead of scanning dirs). |
+| `sv_compilation_flags` | `[]` | slang `CompilationFlags` to set, by name, e.g. `["DisableInstanceCaching"]` (works around slang's false "cyclic dependency" on a virtual interface taken from the second of two identical wrapper instances). |
 | `sv_doc_style` | `"native"` | Default doc-comment dialect. |
 | `sv_default_options` | `{}` | Options applied to every `auto*` directive. |

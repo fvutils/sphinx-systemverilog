@@ -49,8 +49,11 @@ class ModelBuilder:
         defines: dict[str, str] | None = None,
         nodocs_policy: str = "include",
         document_macros: bool = True,
+        compilation_flags: Iterable[str] | None = None,
     ) -> None:
         self.doc_style = doc_style
+        #: pyslang ``CompilationFlags`` names (``sv_compilation_flags``).
+        self.compilation_flags = list(compilation_flags or [])
         self.include_dirs = list(include_dirs or [])
         self.defines = dict(defines or {})
         #: How to treat UVM ``-- NODOCS --`` blocks: "include" the prose or "skip".
@@ -107,8 +110,30 @@ class ModelBuilder:
 
     # -- core -----------------------------------------------------------------
 
+    def _compilation_options(self):
+        """A ``Bag`` setting :attr:`compilation_flags`, or ``None`` for none.
+
+        Each name is a ``pyslang.ast.CompilationFlags`` member, as slang's
+        driver spells them (``DisableInstanceCaching``, ``AllowUseBeforeDeclare``,
+        ...). An unknown name is an error, not a silent no-op.
+        """
+        if not self.compilation_flags:
+            return None
+        flags = pyslang.ast.CompilationFlags.None_
+        for name in self.compilation_flags:
+            flag = getattr(pyslang.ast.CompilationFlags, name, None)
+            if flag is None or name.startswith("_"):
+                raise ValueError(
+                    f"sv_compilation_flags: {name!r} is not a slang CompilationFlags name"
+                )
+            flags = flags | flag
+        co = pyslang.ast.CompilationOptions()
+        co.flags = flags
+        return pyslang.Bag([co])
+
     def _build(self, trees: list[Any]) -> list[SvObject]:
-        comp = Compilation()
+        options = self._compilation_options()
+        comp = Compilation(options) if options is not None else Compilation()
         source_manager = None
         for tree in trees:
             comp.addSyntaxTree(tree)
@@ -823,6 +848,17 @@ def _normalize_ws(text: str) -> str:
     return " ".join(text.split())
 
 
+def _source_bytes(sm: Any, buffer: Any) -> bytes:
+    """A buffer's source as UTF-8 bytes.
+
+    slang's offsets count bytes, while pyslang returns the text decoded: slicing
+    the ``str`` by them shifts everything after a multi-byte character (a
+    ``§`` in a comment) by its extra bytes.
+    """
+    text = sm.getSourceText(buffer)
+    return text if isinstance(text, bytes) else text.encode("utf-8")
+
+
 def _node_source(node: Any, sm: Any) -> str:
     """Exact source text of *node*, from its first token to its last.
 
@@ -832,8 +868,10 @@ def _node_source(node: Any, sm: Any) -> str:
     try:
         start = node.getFirstToken().range.start
         end = node.getLastToken().range.end
-        text = sm.getSourceText(start.buffer)
-        return _normalize_ws(text[start.offset:end.offset])
+        text = _source_bytes(sm, start.buffer)
+        return _normalize_ws(
+            text[start.offset:end.offset].decode("utf-8", "replace")
+        )
     except Exception:
         return _normalize_ws(str(node))
 

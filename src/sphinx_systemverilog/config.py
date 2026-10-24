@@ -28,6 +28,8 @@ def register_config(app: "Sphinx") -> None:
     app.add_config_value("sv_defines", {}, "env", types=[dict])
     # Explicit "build unit" roots to elaborate (e.g. ["uvm_pkg.sv"]).
     app.add_config_value("sv_build_units", [], "env", types=[list])
+    # slang CompilationFlags to set, by name (e.g. ["DisableInstanceCaching"]).
+    app.add_config_value("sv_compilation_flags", [], "env", types=[list])
     # Default doc-comment dialect: one of DOC_STYLES.
     app.add_config_value("sv_doc_style", "native", "env", types=[str])
     # How to treat UVM ``-- NODOCS --`` blocks: "include" the prose or "skip".
