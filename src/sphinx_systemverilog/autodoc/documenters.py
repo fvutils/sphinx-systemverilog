@@ -94,7 +94,28 @@ class SvDocumenter:
         if self._wants_members(obj):
             ordered = self._ordered_members(obj)
             shown = [c for c in ordered if not self._skip_member(obj, c)]
-            lines.extend(self._render_members(shown, indent, level))
+            if obj.kind in ("module", "interface", "program"):
+                sections = (
+                    ("Parameters", "parameter"),
+                    ("Ports", "port"),
+                )
+                categorized = {
+                    kind for _, kind in sections
+                }
+                for title, kind in sections:
+                    section_members = [c for c in shown if c.kind == kind]
+                    if section_members:
+                        heading_indent = indent + INDENT
+                        lines.extend((
+                            heading_indent + title,
+                            heading_indent + "-" * len(title),
+                            "",
+                        ))
+                        lines.extend(self._render_members(section_members, indent, level))
+                remaining = [c for c in shown if c.kind not in categorized]
+                lines.extend(self._render_members(remaining, indent, level))
+            else:
+                lines.extend(self._render_members(shown, indent, level))
             lines.extend(self._macro_note(obj, ordered, shown, indent))
             lines.extend(self._render_inherited(obj, indent, level))
         return lines
