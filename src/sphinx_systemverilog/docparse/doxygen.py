@@ -42,7 +42,17 @@ _FIELD_COMMANDS = {
 }
 
 #: Commands whose text contributes to the summary/body, not a field.
-_PROSE_COMMANDS = {"brief", "short", "details", "summary"}
+_PROSE_COMMANDS = {
+    "brief", "short", "details", "summary",
+}
+
+_METADATA_LABELS = {
+    "file": "File",
+    "name": "Name",
+    "author": "Author",
+    "date": "Date",
+    "version": "Version",
+}
 
 
 class DoxygenParser(DocstringParser):
@@ -61,6 +71,7 @@ class DoxygenParser(DocstringParser):
         target = body          # where free text currently accumulates
         saw_brief = False
         current_field: DocField | None = None
+        ignore_unknown_continuation = False
 
         # Computed up front, on the raw text: this dialect converts inline
         # markup line by line *before* sanitize_prose runs, so it has to know
@@ -68,13 +79,14 @@ class DoxygenParser(DocstringParser):
         literal = literal_line_mask(text)
 
         for line, is_literal in zip(text.split("\n"), literal):
-            if is_literal and current_field is None:
+            if is_literal and current_field is None and not ignore_unknown_continuation:
                 # Code: no escaping, no xref substitution, indentation kept.
                 target.append(line)
                 continue
             if not line.strip():
                 # A blank line ends the @brief paragraph and any open field.
                 current_field = None
+                ignore_unknown_continuation = False
                 if target is brief:
                     target = body
                 else:
@@ -84,6 +96,7 @@ class DoxygenParser(DocstringParser):
             if m:
                 cmd, rest = m.group(1).lower(), m.group(2)
                 current_field = None
+                ignore_unknown_continuation = False
                 if cmd in _PROSE_COMMANDS:
                     if cmd in ("brief", "short"):
                         saw_brief = True
@@ -93,15 +106,21 @@ class DoxygenParser(DocstringParser):
                     if rest:
                         target.append(_inline(rest, xrefs))
                     continue
+                if cmd in _METADATA_LABELS:
+                    target = body
+                    body.extend((f"**{_METADATA_LABELS[cmd]}:** {_inline(rest, xrefs)}", ""))
+                    continue
                 if cmd in _FIELD_COMMANDS:
                     current_field = _make_field(cmd, rest, xrefs)
                     fields.append(current_field)
                     continue
-                # Unknown command: keep its argument as plain text.
-                target.append(_inline(rest, xrefs))
+                # Unknown command and its continuation are not documentation.
+                ignore_unknown_continuation = True
                 continue
 
             # Continuation / plain text line.
+            if ignore_unknown_continuation:
+                continue
             if current_field is not None:
                 extra = _inline(line.strip(), xrefs)
                 current_field.body = (current_field.body + " " + extra).strip()
@@ -122,7 +141,8 @@ class DoxygenParser(DocstringParser):
     def matches(self, raw: str) -> bool:
         # Auto-detect: any Doxygen command present.
         return bool(re.search(r"(^|\s)[@\\](brief|param|return|returns|details|"
-                              r"note|see|retval)\b", raw or ""))
+                              r"note|see|retval|file|name|author|date|version)\b",
+                      raw or ""))
 
 
 def _make_field(cmd: str, rest: str, xrefs: list[str]) -> DocField:
