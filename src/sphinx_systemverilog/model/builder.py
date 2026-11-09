@@ -501,6 +501,10 @@ class ModelBuilder:
         for i in range(1, len(params)):
             if trailing[i] and not params[i - 1].is_documented:
                 params[i - 1].raw_doc = clean_comment_block(trailing[i])
+        if params:
+            trailing_last, _ = split_leading_trivia(plist.getLastToken())
+            if trailing_last and not params[-1].is_documented:
+                params[-1].raw_doc = clean_comment_block(trailing_last)
         return params
 
     def _parse_ports(self, header: Any, sm: Any, qname: str) -> list[SvObject]:
@@ -534,6 +538,10 @@ class ModelBuilder:
         for i in range(1, len(ports)):
             if trailing[i] and not ports[i - 1].is_documented:
                 ports[i - 1].raw_doc = clean_comment_block(trailing[i])
+        if ports:
+            trailing_last, _ = split_leading_trivia(plist.getLastToken())
+            if trailing_last and not ports[-1].is_documented:
+                ports[-1].raw_doc = clean_comment_block(trailing_last)
         return ports
 
     # -- leaf builders --------------------------------------------------------
