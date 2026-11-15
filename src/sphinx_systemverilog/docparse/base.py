@@ -45,10 +45,13 @@ class ParsedDoc:
             lines.extend(self.body.splitlines())
             lines.append("")
         for f in self.fields:
+            # A multi-line body continues on lines indented under the field.
+            first, *rest = f.body.split("\n")
             if f.name:
-                lines.append(f":{f.kind} {f.name}: {f.body}")
+                lines.append(f":{f.kind} {f.name}: {first}".rstrip())
             else:
-                lines.append(f":{f.kind}: {f.body}")
+                lines.append(f":{f.kind}: {first}".rstrip())
+            lines.extend(f"   {r}" if r.strip() else "" for r in rest)
         if lines and lines[-1] != "":
             lines.append("")
         return lines

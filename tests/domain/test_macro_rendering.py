@@ -75,3 +75,30 @@ def test_macro_signature_shows_formals_and_body(app):
     assert any(s.startswith("macro SAMPLE_MK(T, name)") for s in rendered), rendered
     # The `define keyword is dropped: the kind label already carries it.
     assert not any("`define" in s for s in rendered), rendered
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("mode, sig, expected", [
+    ("short", "`define MK(T) T x;", "`define MK(T) T x;"),
+    ("constants", "`define MK(T) T x;", "`define MK(T)"),
+    ("constants", "`define WIDTH 32", "`define WIDTH 32"),
+    ("constants", "`define F(a, b=(1)) a+b", "`define F(a, b=(1))"),
+    ("none", "`define WIDTH 32", "`define WIDTH"),
+    ("none", "`define GUARD", "`define GUARD"),
+])
+def test_macro_body_modes(mode, sig, expected):
+    from sphinx_systemverilog.autodoc.documenters import _macro_display
+    assert _macro_display(sig, mode) == expected
+
+
+@pytest.mark.sphinx("html", testroot="macros",
+                    confoverrides={**CONF, "sv_macro_body": "constants"})
+def test_macro_body_constants_hides_function_like_bodies(app):
+    app.build()
+    doctree = app.env.get_doctree("index")
+    rendered = {
+        sig.astext().split("[source]")[0].strip()
+        for sig in doctree.findall(addnodes.desc_signature)
+    }
+    assert "macro SAMPLE_MK(T, name)" in rendered, rendered
+    assert "macro SAMPLE_WIDTH 32" in rendered, rendered

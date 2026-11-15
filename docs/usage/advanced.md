@@ -28,6 +28,14 @@ sv_document_macros = False
 > Note: include guards (e.g. `` `define MY_PKG_SVH ``) are extracted like any
 > other macro; narrow with `:exclude:` or a name glob if you don't want them.
 
+A short macro body is shown in the signature (`` `define WIDTH 32 ``). For a
+library whose macros' expansions are not part of its API, show bodies only for
+constants, the macros without formals:
+
+```python
+sv_macro_body = "constants"      # or "none"; the default is "short"
+```
+
 ## Covergroups & constraints
 
 Inside a class, **covergroups** (with their coverpoints) and **constraint

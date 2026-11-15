@@ -166,6 +166,7 @@ class AutoSvDirective(Directive):
             app, options, default_style, index=index,
             ignore_macros=env.config.sv_ignore_macro_content,
             hide_trivial_new=env.config.sv_uvm_hide_trivial_new,
+            macro_body=env.config.sv_macro_body,
         )
         rst_lines = documenter.render(obj)
 
@@ -320,6 +321,7 @@ class AutoSvSummaryDirective(Directive):
             app, options, default_style, index=index,
             ignore_macros=env.config.sv_ignore_macro_content,
             hide_trivial_new=env.config.sv_uvm_hide_trivial_new,
+            macro_body=env.config.sv_macro_body,
         )
         rst_lines: list[str] = []
         for root in roots:

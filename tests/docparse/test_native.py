@@ -65,3 +65,46 @@ def test_as_rst_roundtrip(parse):
     rst = "\n".join(d.as_rst())
     assert "Summary." in rst
     assert ":param x: the x" in rst
+
+
+def test_role_at_line_start_is_not_a_field(parse):
+    # A wrapped sentence can put a role first on a line; it is prose.
+    d = parse("A bundle type is written with the API, so its\n"
+              ":sv:func:`build` has a body::\n\n    code;")
+    assert d.fields == []
+    assert d.summary.endswith(":sv:func:`build` has a body::")
+    assert d.body == "    code;"
+
+
+def test_role_at_line_start_in_body(parse):
+    d = parse("Summary.\n\nSee the\n:sv:class:`thing` class.\n\n:param x: the x")
+    assert [(f.kind, f.name) for f in d.fields] == [("param", "x")]
+    assert d.body == "See the\n:sv:class:`thing` class."
+
+
+def test_field_inside_literal_block_is_code(parse):
+    d = parse("Summary::\n\n    :param x: not a field\n\n:param y: a field")
+    assert [f.name for f in d.fields] == ["y"]
+    assert ":param x: not a field" in d.body
+
+
+def test_field_continuation_lines(parse):
+    d = parse("Summary.\n\n"
+              ":param T: the value type: a packed type (a vector,\n"
+              "    packed struct or enum)\n"
+              ":returns: the\n"
+              "   result")
+    assert [(f.kind, f.name, f.body) for f in d.fields] == [
+        ("param", "T", "the value type: a packed type (a vector,\npacked struct or enum)"),
+        ("returns", None, "the\nresult"),
+    ]
+    assert d.body == ""
+    rst = d.as_rst()
+    assert ":param T: the value type: a packed type (a vector," in rst
+    assert "   packed struct or enum)" in rst
+
+
+def test_field_continuation_keeps_relative_indent(parse):
+    d = parse(":param x: one of:\n\n    - a\n    - b\n\n      nested\n\nTrailing body.")
+    assert d.fields[0].body == "one of:\n\n- a\n- b\n\n  nested"
+    assert d.body == "Trailing body."

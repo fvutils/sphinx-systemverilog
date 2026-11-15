@@ -54,6 +54,7 @@ class SvDocumenter:
         index: Any = None,
         ignore_macros: Sequence[str] | None = None,
         hide_trivial_new: bool = True,
+        macro_body: str = "short",
     ):
         self.app = app
         self.options = options
@@ -64,6 +65,7 @@ class SvDocumenter:
             UVM_BOILERPLATE_MACROS if ignore_macros is None else ignore_macros
         )
         self.hide_trivial_new = hide_trivial_new
+        self.macro_body = macro_body
         #: ``_uvm_role`` walks the ``extends`` chain, and ``_skip_member`` asks
         #: for the same parent's role once per member.  Memoized per documenter.
         self._role_cache: dict[int, str] = {}
@@ -73,7 +75,10 @@ class SvDocumenter:
     def render(self, obj: SvObject, level: int = 0) -> list[str]:
         lines: list[str] = []
         indent = INDENT * level
-        directive = f".. sv:{obj.kind}:: {obj.signature or obj.name}"
+        sig = obj.signature or obj.name
+        if obj.kind == "macro":
+            sig = _macro_display(sig, self.macro_body)
+        directive = f".. sv:{obj.kind}:: {sig}"
         lines.append(indent + directive)
 
         for opt in self._option_lines(obj):
@@ -234,6 +239,9 @@ class SvDocumenter:
             opts.append(f":module: {module}")
         if obj.kind not in self._SELF_DESCRIBING:
             quals = [q for q in obj.qualifiers if q != "virtual"]
+            if obj.kind == "class" and "#(" in obj.signature:
+                # The parameter list in the signature says it.
+                quals = [q for q in quals if q != "parameterized"]
             if "virtual" in obj.qualifiers:
                 opts.append(":virtual:")
             if quals:
@@ -344,6 +352,10 @@ class SvDocumenter:
         # Undocumented leaf members are hidden unless :undoc-members: is set.
         # Ports, parameters and coverpoints are structural API and always shown.
         structural = child.kind in ("port", "parameter", "coverpoint")
+        if child.kind == "parameter" and parent.kind == "class":
+            # A class's parameters are already in its signature; list one again
+            # only for its own doc comment.
+            structural = False
         default_skip = (
             not child.is_documented
             and not child.is_scope
@@ -397,3 +409,35 @@ def _module_of(obj: SvObject) -> str | None:
     if not qn or "::" not in qn:
         return None
     return qn.rsplit("::", 1)[0]
+
+
+def _macro_display(sig: str, mode: str) -> str:
+    """A macro signature with its body kept or dropped per ``sv_macro_body``.
+
+    *sig* is ``\`define NAME(formals) body``, its body already limited to a
+    short one by the model, which is all ``short`` shows.
+    """
+    if mode == "short":
+        return sig
+    head = sig.split(None, 2)
+    if len(head) < 2:
+        return sig
+    prefix = f"{head[0]} "
+    rest = sig[len(prefix):].lstrip()
+    # The name, then formals iff '(' follows it directly.
+    end = 0
+    while end < len(rest) and (rest[end].isalnum() or rest[end] in "_$"):
+        end += 1
+    if end < len(rest) and rest[end] == "(":
+        depth = 0
+        for i in range(end, len(rest)):
+            depth += {"(": 1, ")": -1}.get(rest[i], 0)
+            if depth == 0:
+                end = i + 1
+                break
+        has_formals = True
+    else:
+        has_formals = False
+    if mode == "constants" and not has_formals:
+        return sig
+    return prefix + rest[:end]

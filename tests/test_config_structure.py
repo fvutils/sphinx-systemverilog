@@ -28,6 +28,7 @@ class _Config:
 
     def __init__(self, **overrides):
         self.sv_doc_style = "native"
+        self.sv_macro_body = "short"
         for name, default, _ in SETTINGS:
             setattr(self, name, default)
         for name, value in overrides.items():
@@ -62,3 +63,10 @@ def test_valid_values_are_left_alone(name, default, _zero, good):
     validate_config(None, config)
 
     assert getattr(config, name) == good
+
+
+@pytest.mark.parametrize("bad", ["sometimes", None, 3])
+def test_bad_macro_body_falls_back(bad):
+    config = _Config(sv_macro_body=bad)
+    validate_config(None, config)
+    assert config.sv_macro_body == "short"

@@ -168,4 +168,6 @@ def test_parameterized_class_property_with_several_declarators():
         "package p; class c #(int N = 1); int x, y; endclass endpackage"
     )
     (cls,) = pkg.children
-    assert [c.name for c in cls.children] == ["x", "y"]
+    assert [c.name for c in cls.children if c.kind == "property"] == ["x", "y"]
+    # The class parameter is a member too.
+    assert [c.name for c in cls.children if c.kind == "parameter"] == ["N"]

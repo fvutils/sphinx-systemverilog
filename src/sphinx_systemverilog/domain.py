@@ -106,8 +106,7 @@ class SvObjectDescription(ObjectDescription):
         qualifiers = self.options.get("qualifiers", "")
         # ``virtual`` is a flag option, so docutils stores None when it is
         # *present*; test for membership, not truthiness.
-        if "virtual" in self.options:
-            qualifiers = ("virtual " + qualifiers).strip()
+        qualifiers = _ordered_qualifiers(qualifiers, "virtual" in self.options)
 
         name = _signature_name(sig, self.object_kind)
         # Stash the resolved name for the TOC hooks: Sphinx calls
@@ -136,6 +135,12 @@ class SvObjectDescription(ObjectDescription):
                 # Dimensions bind to the name; anything else is set off by a space.
                 sep = "" if tail.startswith("[") else " "
                 signode += addnodes.desc_annotation(sep + tail, sep + tail)
+        elif self.object_kind == "class":
+            # 'name #(type T = bit)': the parameter list follows the name.
+            signode += addnodes.desc_name(name, name)
+            params = sig.strip()[len(name):].strip()
+            if params:
+                signode += addnodes.desc_annotation(" " + params, " " + params)
         elif self.object_kind == "macro":
             # The `define keyword is dropped: the kind label already says it,
             # and what a reader needs is the name, its formals, and the body.
@@ -492,6 +497,21 @@ def _signature_return(sig: str, name: str, kind: str) -> str:
         return ""
     middle = [t for t in tokens[:-1] if t not in _SIGNATURE_LEADERS]
     return " ".join(middle)
+
+
+#: Method qualifiers in SystemVerilog source order: ``protected static``,
+#: ``pure virtual``, ``local virtual``.
+_QUALIFIER_RANK = {"local": 0, "protected": 0, "static": 1, "pure": 2, "virtual": 3}
+
+
+def _ordered_qualifiers(qualifiers: str, virtual: bool) -> str:
+    """The qualifier string as SV writes it: the method qualifiers above in
+    rank order, then any others (``rand``, ``interface``, ...) as given."""
+    words = qualifiers.split()
+    if virtual and "virtual" not in words:
+        words.append("virtual")
+    known = sorted((w for w in words if w in _QUALIFIER_RANK), key=_QUALIFIER_RANK.get)
+    return " ".join(known + [w for w in words if w not in _QUALIFIER_RANK])
 
 
 #: Words that may lead a hand-written subroutine signature but are not part of

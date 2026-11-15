@@ -269,7 +269,7 @@ class ModelBuilder:
             return self._build_property(sym, sm, parent_qname)
         if kind == SymbolKind.TypeAlias:
             return self._build_simple(sym, KIND_TYPEDEF, sm, parent_qname,
-                                      signature=f"typedef {sym.name}")
+                                      signature=_typedef_signature(sym))
         if kind == SymbolKind.Definition:
             mapped = _DEFINITION_KINDS.get(str(getattr(sym, "definitionKind", "")))
             if mapped:
@@ -294,7 +294,9 @@ class ModelBuilder:
             doc_style=self.doc_style,
         )
         if class_sym is not None:
-            if getattr(class_sym, "isAbstract", False):
+            if getattr(class_sym, "isInterface", False):
+                obj.qualifiers.append("interface")
+            elif getattr(class_sym, "isAbstract", False):
                 obj.qualifiers.append("virtual")
             base = getattr(class_sym, "baseClass", None)
             if base is not None and getattr(base, "name", ""):
@@ -401,10 +403,20 @@ class ModelBuilder:
             doc_style=self.doc_style,
         )
         syntax = getattr(sym, "syntax", None)
+        word = _cst_class_qualifier(syntax)
+        if word:
+            obj.qualifiers.append(word)
         obj.extends = _extends_from_clause(getattr(syntax, "extendsClause", None))
         self._apply_nd(obj, sym)
         if syntax is not None:
-            obj.children = self._parse_cst_members(syntax, sm, qname)
+            plist = getattr(syntax, "parameters", None)
+            if plist is not None:
+                obj.signature = f"{sym.name} {_tokens_text(plist)}"
+            params = self._parse_parameters(syntax, sm, qname)
+            for p in params:
+                if not p.signature.split(None, 1)[0] in ("parameter", "localparam"):
+                    p.signature = "parameter " + p.signature
+            obj.children = params + self._parse_cst_members(syntax, sm, qname)
         return obj
 
     def _parse_cst_members(self, syntax: Any, sm: Any, qname: str) -> list[SvObject]:
@@ -413,7 +425,11 @@ class ModelBuilder:
             tn = type(item).__name__
             first = len(members)
             try:
-                if "PropertyDeclaration" in tn:
+                decl_tn = type(getattr(item, "declaration", None)).__name__
+                if "PropertyDeclaration" in tn and "Typedef" in decl_tn:
+                    # A class-scope typedef is wrapped as a property declaration.
+                    members.append(self._cst_typedef(item, item.declaration, sm, qname))
+                elif "PropertyDeclaration" in tn:
                     members.extend(self._cst_property(item, sm, qname))
                 elif "MethodPrototype" in tn:
                     members.append(self._cst_method(item, item.prototype, sm, qname))
@@ -421,6 +437,8 @@ class ModelBuilder:
                     members.append(
                         self._cst_method(item, item.declaration.prototype, sm, qname)
                     )
+                elif "TypedefDeclaration" in tn:
+                    members.append(self._cst_typedef(item, item, sm, qname))
             except Exception:
                 continue
             # A parameterized class gets the same `uvm_*_utils treatment as any
@@ -446,6 +464,18 @@ class ModelBuilder:
             doc = None  # only the first declarator gets the leading comment
         return out
 
+    def _cst_typedef(self, item: Any, decl: Any, sm: Any, qname: str) -> SvObject | None:
+        name = _name_text(getattr(decl, "name", None))
+        if not name:
+            return None
+        return SvObject(
+            kind=KIND_TYPEDEF, name=name, qualified_name=_join(qname, name),
+            signature=_typedef_text(decl),
+            location=resolve_location(sm, item.getFirstToken().location),
+            raw_doc=_token_leading_doc(item.getFirstToken()),
+            doc_style=self.doc_style,
+        )
+
     def _cst_method(self, item: Any, proto: Any, sm: Any, qname: str) -> SvObject | None:
         name = _name_text(getattr(proto, "name", None))
         if not name:
@@ -456,6 +486,7 @@ class ModelBuilder:
         kind = KIND_TASK if "task" in head.split() else KIND_FUNCTION
         return SvObject(
             kind=kind, name=name, qualified_name=_join(qname, name), signature=sig,
+            qualifiers=_cst_qualifiers(item),
             location=resolve_location(sm, item.getFirstToken().location),
             raw_doc=_token_leading_doc(item.getFirstToken()),
             doc_style=self.doc_style,
@@ -501,6 +532,12 @@ class ModelBuilder:
         for i in range(1, len(params)):
             if trailing[i] and not params[i - 1].is_documented:
                 params[i - 1].raw_doc = clean_comment_block(trailing[i])
+        # The last parameter's trailing comment is trivia of the closing paren.
+        close = getattr(plist, "closeParen", None)
+        if params and close is not None and not params[-1].is_documented:
+            trailing_last, _ = split_leading_trivia(close)
+            if trailing_last:
+                params[-1].raw_doc = clean_comment_block(trailing_last)
         return params
 
     def _parse_ports(self, header: Any, sm: Any, qname: str) -> list[SvObject]:
@@ -544,12 +581,11 @@ class ModelBuilder:
         obj = self._build_simple(
             sym, kind, sm, qname, signature=_subroutine_signature(sym, is_task)
         )
-        flags = _safe_flags(sym)
-        if "Pure" in flags:
+        if _method_flag(sym, "Pure"):
             obj.qualifiers.append("pure")
         if getattr(sym, "isVirtual", False):
             obj.qualifiers.append("virtual")
-        if "Static" in flags:
+        if _method_flag(sym, "Static"):
             obj.qualifiers.append("static")
         vis = _visibility(sym)
         if vis:
@@ -557,7 +593,7 @@ class ModelBuilder:
         return obj
 
     def _build_property(self, sym: Any, sm: Any, qname: str | None) -> SvObject:
-        type_str, dims = _split_unpacked(str(getattr(sym, "type", "")) or "")
+        type_str, dims = _written_type(sym) or _split_unpacked(str(getattr(sym, "type", "")) or "")
         sig = f"{type_str} {sym.name}{dims}".strip()
         obj = self._build_simple(sym, KIND_PROPERTY, sm, qname, signature=sig)
         if str(getattr(sym, "randMode", "")) in ("RandMode.Rand", "RandMode.RandC"):
@@ -742,6 +778,60 @@ def _safe_flags(sym: Any) -> str:
         return ""
 
 
+def _method_flag(sym: Any, name: str) -> bool:
+    """Whether a subroutine or prototype carries ``MethodFlags.<name>``.
+
+    The flags are an integer-valued enum, and ``str()`` of a combination is
+    often a bare number (``"4"``), so test the bit; fall back to the name for a
+    binding that stringifies by name.
+    """
+    flags = getattr(sym, "flags", None)
+    bit = getattr(pyslang.ast.MethodFlags, name, None)
+    if flags is None or bit is None:
+        return False
+    try:
+        return bool(int(flags) & int(bit))
+    except Exception:
+        return name in _safe_flags(sym)
+
+
+#: Method qualifiers recovered from syntax.  ``extern`` is left out: it says
+#: where the body is, which is no part of the method's interface.
+_CST_METHOD_QUALIFIERS = ("local", "protected", "static", "pure", "virtual")
+
+
+def _cst_qualifiers(item: Any) -> list[str]:
+    # valueText, not str(): a token's str() carries its leading trivia, which
+    # for the first qualifier is the doc comment.
+    words = {getattr(q, "valueText", "") for q in (getattr(item, "qualifiers", None) or [])}
+    return [q for q in _CST_METHOD_QUALIFIERS if q in words]
+
+
+def _tokens_text(node: Any) -> str:
+    """A syntax node's source on one line, without comments: its tokens joined
+    with one space wherever the source had whitespace or a comment, except just
+    inside brackets and before a comma."""
+    tokens: list[Any] = []
+    collect = lambda n: tokens.append(n) if type(n).__name__ == "Token" else None  # noqa: E731
+    # Some syntax lists (a declarator's dimensions) come back as plain lists.
+    for part in node if isinstance(node, list) else [node]:
+        part.visit(collect)
+    out = ""
+    for tok in tokens:
+        text = tok.rawText
+        if out and tok.trivia and out[-1] not in "([{" and text not in (")", "]", "}", ","):
+            out += " "
+        out += text
+    return out
+
+
+def _cst_class_qualifier(syntax: Any) -> str | None:
+    """``virtual`` or ``interface``, from a class declaration's syntax."""
+    tok = getattr(syntax, "virtualOrInterface", None)
+    word = getattr(tok, "valueText", "") if tok is not None else ""
+    return word if word in ("virtual", "interface") else None
+
+
 def _visibility(sym: Any) -> str | None:
     vis = str(getattr(sym, "visibility", ""))
     if vis == "Visibility.Local":
@@ -755,7 +845,7 @@ def _subroutine_signature(sym: Any, is_task: bool) -> str:
     args = []
     for arg in getattr(sym, "arguments", []) or []:
         direction = _ARG_DIR.get(str(getattr(arg, "direction", "")), "")
-        atype, dims = _split_unpacked(str(getattr(arg, "type", "")) or "")
+        atype, dims = _written_type(arg) or _split_unpacked(str(getattr(arg, "type", "")) or "")
         piece = " ".join(p for p in (direction, atype, arg.name + dims) if p)
         default = _argument_default(arg)
         if default:
@@ -764,8 +854,58 @@ def _subroutine_signature(sym: Any, is_task: bool) -> str:
     arglist = ", ".join(args)
     if is_task:
         return f"task {sym.name}({arglist})"
-    ret = str(getattr(sym, "returnType", "")) or "void"
+    ret = _written_return_type(sym) or str(getattr(sym, "returnType", "")) or "void"
     return f"function {ret} {sym.name}({arglist})"
+
+
+def _written_type(sym: Any) -> tuple[str, str] | None:
+    """A variable's or argument's ``(type, unpacked dimensions)`` as written:
+    ``pair_t`` and ``[]`` rather than slang's resolved ``int$[][0:1]``.
+
+    ``None`` when there is no written type (an implicit one, or no syntax), so
+    the caller falls back to the resolved type.
+    """
+    declared = getattr(sym, "declaredType", None)
+    type_syntax = getattr(declared, "typeSyntax", None) if declared is not None else None
+    if type_syntax is None:
+        return None
+    # Packed dimensions bind to the type, as slang prints them: ``bit[7:0]``.
+    text = re.sub(r"\s+\[", "[", _tokens_text(type_syntax))
+    if not text:
+        return None
+    declarator = getattr(sym, "syntax", None)
+    dims = getattr(declarator, "dimensions", None) if declarator is not None else None
+    return text, (_tokens_text(dims) if dims is not None else "")
+
+
+def _written_return_type(sym: Any) -> str:
+    """A function's return type as written (``params_t``), or "" if unknown."""
+    syntax = getattr(sym, "syntax", None)
+    proto = getattr(syntax, "prototype", None) if syntax is not None else None
+    ret = getattr(proto, "returnType", None) if proto is not None else None
+    return _tokens_text(ret) if ret is not None else ""
+
+
+def _typedef_signature(sym: Any) -> str:
+    """``typedef <type> <name><dims>`` as written.  A struct, union or enum body
+    is abbreviated to ``{ ... }``: the members are not a one-line signature."""
+    syntax = getattr(sym, "syntax", None)
+    if syntax is None or "Typedef" not in type(syntax).__name__:
+        return f"typedef {sym.name}"
+    return _typedef_text(syntax)
+
+
+def _typedef_text(syntax: Any) -> str:
+    text = _tokens_text(syntax).rstrip(";").rstrip()
+    start = text.find("{")
+    if start >= 0:
+        depth = 0
+        for i in range(start, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                text = text[:start] + "{ ... }" + text[i + 1:]
+                break
+    return text
 
 
 def _split_unpacked(type_str: str) -> tuple[str, str]:

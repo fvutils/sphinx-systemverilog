@@ -24,6 +24,10 @@ straight into Sphinx.
 - First paragraph = summary; everything after the first blank line = body.
 - reST field lists describe parameters and return values.
 - Any reST is legal: lists, ``` ``literals`` ```, roles, directives.
+- A field is an **unindented** line `:name arg: text`, with whitespace after
+  the closing colon. Its description may continue on indented lines, as in
+  reST. A line that merely begins with a role (`` :sv:func:`x` is ... ``) is
+  prose, and an indented line (a literal block) is never a field.
 
 ```systemverilog
 // Compute the parity of the data payload.

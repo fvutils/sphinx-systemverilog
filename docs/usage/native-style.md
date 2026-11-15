@@ -10,7 +10,11 @@ flows straight into Sphinx with no translation.
   declaration.
 - The **first paragraph** is the summary.
 - Everything after the first blank line is the body (full reST/MyST allowed).
-- reST **field lists** describe parameters and return values.
+- reST **field lists** describe parameters and return values. A field is an
+  unindented `:name arg: text` line; its description may continue on indented
+  lines. A line that only *begins* with a role, such as
+  `` :sv:func:`build` has a body:: ``, is prose, and nothing inside a literal
+  block is taken as a field.
 - A **trailing inline comment** documents the declaration on its own line.
 
 ## Example

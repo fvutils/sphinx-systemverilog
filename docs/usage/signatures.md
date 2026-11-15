@@ -24,6 +24,19 @@ The parts, and where each comes from:
 | `extends` | the `:extends:` option |
 | `[source]` | the `:source:` option (see [source links](cross-referencing.md)) |
 
+Qualifiers are shown in SystemVerilog order (`protected static`, `pure
+virtual`), and a class shows `virtual` or `interface`. `extern` is not shown: it
+says where the body is, not how to call the method.
+
+Types are shown as written. An argument declared `pair_t pairs[]` reads that
+way, not as the type slang resolves `pair_t` to, and a typedef's signature is
+its declaration (`typedef int pair_t[2]`), with a struct, union or enum body
+abbreviated to `{ ... }`.
+
+A parameterized class shows its parameter list after its name:
+`class fw_signal #(type T = bit)`. A class parameter is also listed as a member
+when it has a doc comment of its own; otherwise the signature says it all.
+
 Autodoc fills those options in for you; a hand-written `sv:function::` directive
 gets exactly the same treatment, because the parsing happens in the domain
 rather than in the source model.

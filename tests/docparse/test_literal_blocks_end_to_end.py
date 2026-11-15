@@ -132,3 +132,27 @@ def test_naturaldocs_keeps_a_literal_block():
 def test_plain_keeps_a_literal_block():
     parsed = get_parser("plain").parse(DOXYGEN)
     _assert_renders_as_a_literal_block(parsed.body, contains="super.build_phase")
+
+
+# A wrapped sentence that puts a role first on the line introducing the block.
+# The role is a docutils standard one, so bare docutils resolves it.
+NATIVE_ROLE_LED = """
+A bundle type is written with the API, so its
+:emphasis:`build` has a body::
+
+    virtual function void build();
+        valid = fw_output #(bit)::create("valid", this);
+    endfunction
+
+:param T: the payload type: a packed type (a vector,
+    packed struct or enum)
+"""
+
+
+def test_native_role_led_line_keeps_the_literal_block():
+    parsed = get_parser("native").parse(NATIVE_ROLE_LED)
+    body = "\n".join(parsed.as_rst())
+    _assert_renders_as_a_literal_block(body, contains="fw_output #(bit)::create")
+    fields = list(_doctree(body).findall(nodes.field))
+    assert len(fields) == 1
+    assert "packed struct or enum" in fields[0].astext()

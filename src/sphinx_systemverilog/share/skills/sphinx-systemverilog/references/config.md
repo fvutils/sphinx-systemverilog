@@ -17,6 +17,8 @@ interact with this domain. All are set in `conf.py`. Published version:
 | `sv_doc_style` | `"native"` | str | Default comment dialect: `native`, `naturaldocs`, `doxygen`, `auto`. An invalid value warns and falls back to `native`. |
 | `sv_naturaldocs_nodocs` | `"include"` | str | UVM `-- NODOCS --` blocks: `include` the prose (marker stripped) or `skip` the block. |
 | `sv_document_macros` | `True` | bool | Extract and document `` `define `` macros. Include guards are extracted like any other macro; narrow with `:exclude:` or a glob. |
+| `sv_macro_body` | `"short"` | str | Macro bodies in signatures: `short` (any body of 48 characters or fewer), `constants` (only macros without formals, whose body is their value), `none`. An invalid value warns and falls back to `short`. |
+| `sv_ignore_macro_content` | UVM's registration macros | list | Globs matched against a member's macro-expansion chain; matching members (`` `uvm_*_utils `` boilerplate) are not documented. `:macro-members:` shows them anyway. |
 
 ### `sv_source_dirs` versus `sv_build_units`
 
@@ -41,6 +43,7 @@ parsed into the same index as everything scanned from `sv_source_dirs`.
 |---|---|---|---|
 | `sv_default_options` | `{}` | dict | Options applied to every `auto*` directive, e.g. `{"members": True}`. |
 | `sv_viewcode` | `True` | bool | Generate highlighted source listings and `[source]` links. |
+| `sv_uvm_hide_trivial_new` | `True` | bool | Document a UVM class's `new` only when it has a doc comment of its own. |
 
 `sv_default_options` takes the option names without colons; flags take `True`.
 Directive-level options override it.
