@@ -821,9 +821,13 @@ def _method_flag(sym: Any, name: str) -> bool:
 
     The flags are an integer-valued enum, and ``str()`` of a combination is
     often a bare number (``"4"``), so test the bit; fall back to the name for a
-    binding that stringifies by name.
+    binding that stringifies by name.  Python < 3.11 builds the enum strictly,
+    so a bit the binding does not know makes reading ``sym.flags`` itself raise.
     """
-    flags = getattr(sym, "flags", None)
+    try:
+        flags = getattr(sym, "flags", None)
+    except ValueError:
+        return False
     bit = getattr(pyslang.ast.MethodFlags, name, None)
     if flags is None or bit is None:
         return False
