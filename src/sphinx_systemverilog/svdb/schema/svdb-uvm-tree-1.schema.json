@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fvutils.github.io/sphinx-systemverilog/schema/svdb-uvm-tree-1.schema.json",
+  "title": "svdb UVM component tree",
+  "description": "A UVM component tree stitched from svdb databases (svdb uvm-tree, Database.uvm_tree). Versioned separately from the svdb record format. Fields at their default value are left out.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "sources", "nodes", "links", "overrides", "issues"],
+  "properties": {
+    "format": {"const": "svdb-uvm-tree"},
+    "version": {"const": 1},
+    "sources": {"type": "array", "items": {"type": "string"}, "description": "The databases stitched, in lookup order."},
+    "root": {
+      "type": "object", "additionalProperties": false, "required": ["name", "type"],
+      "properties": {"name": {"type": "string"}, "type": {"type": "string"}}
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Flat: every node in preorder, each with its parent's path. Nested: the root alone, with children arrays.",
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "links": {"type": "array", "items": {"$ref": "#/$defs/link"}},
+    "overrides": {"type": "array", "items": {"$ref": "#/$defs/override"}},
+    "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+    "truncated": {"type": "boolean"}
+  },
+  "$defs": {
+    "loc": {
+      "type": "object", "additionalProperties": false, "required": ["file", "line"],
+      "properties": {
+        "file": {"type": "string", "description": "The source path."},
+        "line": {"type": "integer", "minimum": 1},
+        "col": {"type": "integer", "minimum": 0}
+      }
+    },
+    "node": {
+      "type": "object", "additionalProperties": false, "required": ["path", "name", "type"],
+      "properties": {
+        "path": {"type": "string", "description": "Full instance path, from the root's name."},
+        "parent": {"type": "string"},
+        "name": {"type": "string", "description": "Instance name; handle[*] for a loop's representative node."},
+        "handle": {"type": "string"},
+        "type": {"type": "string", "description": "Class built (qualified name), after factory overrides."},
+        "declared": {"type": "string", "description": "Class the create names, when an override changed it."},
+        "via": {
+          "type": "array", "description": "The overrides applied, in order.",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "replacement"],
+            "properties": {
+              "kind": {"enum": ["type", "inst"]},
+              "owner": {"type": "string", "description": "Path of the component that registered it, or the module for a global one."},
+              "replacement": {"type": "string"},
+              "loc": {"$ref": "#/$defs/loc"}
+            }
+          }
+        },
+        "tier": {"type": "string"},
+        "created_by": {"enum": ["factory", "new"]},
+        "conditional": {"type": "boolean"},
+        "multiplicity": {"type": "string", "description": "N for a loop's representative node."},
+        "state": {"enum": ["ok", "opaque", "unresolved"]},
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["name"],
+            "properties": {"name": {"type": "string"}, "role": {"enum": ["port", "export", "imp"]},
+                           "link": {"enum": ["analysis", "seq_item", "tlm", "handle"]}}
+          }
+        },
+        "loc": {"$ref": "#/$defs/loc"},
+        "children": {"type": "array", "items": {"$ref": "#/$defs/node"}}
+      }
+    },
+    "end": {
+      "type": "object", "additionalProperties": false, "required": ["path"],
+      "properties": {"path": {"type": "string"}, "port": {"type": "string"}}
+    },
+    "link": {
+      "type": "object", "additionalProperties": false, "required": ["source", "target"],
+      "properties": {
+        "source": {"$ref": "#/$defs/end"},
+        "target": {"$ref": "#/$defs/end"},
+        "kind": {"enum": ["analysis", "seq_item", "tlm", "handle"]},
+        "owner": {"type": "string", "description": "Path of the component whose connect_phase makes it."},
+        "conditional": {"type": "boolean"},
+        "multiplicity": {"type": "string"},
+        "state": {"enum": ["ok", "unresolved"]},
+        "text": {"type": "string", "description": "The endpoints as written, when one did not resolve."},
+        "loc": {"$ref": "#/$defs/loc"}
+      }
+    },
+    "override": {
+      "type": "object", "additionalProperties": false, "required": ["original", "replacement", "status"],
+      "properties": {
+        "original": {"type": "string"},
+        "replacement": {"type": "string"},
+        "kind": {"enum": ["type", "inst"]},
+        "inst_path": {"type": ["string", "null"]},
+        "path_base": {"enum": ["owner", "absolute", "unknown"]},
+        "replace": {"const": false},
+        "owner": {"type": "string", "description": "Class or module that writes it."},
+        "method": {"type": "string"},
+        "conditional": {"type": "boolean"},
+        "status": {"enum": ["applied", "unused", "unplaced", "unknown_type", "unapplied"]},
+        "registered_by": {"type": "array", "items": {"type": "string"}},
+        "applied_to": {"type": "array", "items": {"type": "string"}},
+        "loc": {"$ref": "#/$defs/loc"}
+      }
+    },
+    "issue": {
+      "type": "object", "additionalProperties": false, "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string"},
+        "message": {"type": "string"},
+        "path": {"type": "string"},
+        "loc": {"$ref": "#/$defs/loc"}
+      }
+    }
+  }
+}

@@ -27,6 +27,13 @@ def schema() -> dict:
     return json.loads(schema_text())
 
 
+@lru_cache(maxsize=1)
+def uvm_tree_schema() -> dict:
+    """The JSON Schema of :meth:`UvmTree.to_json` output (``svdb-uvm-tree``)."""
+    text = resources.files(__name__).joinpath("schema", "svdb-uvm-tree-1.schema.json").read_text("utf-8")
+    return json.loads(text)
+
+
 def example_names() -> list[str]:
     """Names of the bundled example files (``schema/examples/*.ndjson``)."""
     root = resources.files(__name__).joinpath("schema", "examples")
@@ -39,6 +46,7 @@ def example_text(name: str) -> str:
 
 
 from .database import AmbiguousKey, Database, Object, TreeNode, Unresolved  # noqa: E402
+from .uvm_tree import UvmLink, UvmNode, UvmTree  # noqa: E402
 from .exporter import export_file  # noqa: E402
 from .importer import import_file  # noqa: E402
 from .issues import Issue, SvdbError  # noqa: E402
@@ -48,5 +56,5 @@ from .writer import Writer  # noqa: E402
 __all__ = [
     "SCHEMA_VERSION", "schema", "schema_text", "example_names", "example_text",
     "Database", "Object", "TreeNode", "Unresolved", "AmbiguousKey", "Writer", "import_file", "export_file",
-    "validate", "Issue", "SvdbError",
+    "validate", "Issue", "SvdbError", "UvmTree", "UvmNode", "UvmLink", "uvm_tree_schema",
 ]

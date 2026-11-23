@@ -121,7 +121,8 @@ package mini_uvm_pkg;
                                            bit replace = 1);
     endfunction
     static function void set_inst_override(uvm_object_wrapper override_type,
-                                           string inst_path);
+                                           string inst_path,
+                                           uvm_component parent = null);
     endfunction
   endclass
 
@@ -141,7 +142,8 @@ package mini_uvm_pkg;
                                            bit replace = 1);
     endfunction
     static function void set_inst_override(uvm_object_wrapper override_type,
-                                           string inst_path);
+                                           string inst_path,
+                                           uvm_component parent = null);
     endfunction
   endclass
 

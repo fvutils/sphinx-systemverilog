@@ -10,9 +10,18 @@ statements and reporting what the source says will be built.
 That distinction is not a technicality, and this page states it once so the rest
 of the reference can lean on it:
 
-> This is the testbench hierarchy **as written in `build_phase`**. It is not a
-> simulation trace. Factory overrides, config-driven counts and dynamically
-> named components are reported as such rather than resolved.
+> This is the testbench hierarchy **as written in `build_phase`** and the
+> methods it calls. It is not a simulation trace. Factory overrides,
+> config-driven counts and dynamically named components are reported as such
+> rather than resolved.
+
+"The methods it calls" is followed the way the language follows them. A class
+that defines no `build_phase` builds what its base's builds; `super.build_phase`
+builds the base's children at the point it is called; a helper such as
+`build_agents()` called from `build_phase` (or from the constructor) builds its
+children as if they were written in place, with an `if` or a loop around the
+call carried onto each of them. A call through another object
+(`cfg.build_all(this)`) is not followed. `connect_phase` is read the same way.
 
 ## Status
 
@@ -53,6 +62,7 @@ is shown and the others are named beneath the tree.
 |---|---|
 | `:depth:` | Levels to show. Defaults to `sv_uvm_tree_depth` (4). Whatever is hidden is counted and reported. |
 | `:collapse:` | Fold siblings that differ only in name (`agt_a, agt_b : my_agent`). The fold is keyed on everything else, so two components built under different conditions never merge. |
+| `:resolved:` | Show the tree a run would build, with factory overrides applied (see [below](uvm-tree-resolved)). `:collapse:` does not apply. |
 | `:optional:` | Render nothing, and warn about nothing, if the root does not exist. For pages shared across projects. |
 
 Every type name is a cross-reference to that component's documentation, which is
@@ -436,11 +446,49 @@ So `sv:uvm-tree` reports them, inline on the affected node:
     └── mon : my_monitor  [overridden → noisy_monitor under env.agt.* conditionally]
 ```
 
-**Annotated, never resolved.** The tree goes on naming the type its `create`
+**Annotated, by default.** The tree goes on naming the type its `create`
 call names. Printing `fast_driver` there would trade one confident wrong answer
 for another: whether an override applies depends on whether its statement ran,
 on any later override that replaced it, and — for an inst override — on a
 hierarchical path that does not exist until elaboration.
+
+(uvm-tree-resolved)=
+### The tree with overrides applied
+
+`:resolved:` draws the tree a run would build instead: the factory followed
+in build order, as a simulator follows it, with each component's built type.
+
+```rst
+.. sv:uvm-tree:: my_test
+   :resolved:
+```
+
+```text
+uvm_test_top : my_test
+└── env : my_env
+    └── agt : my_agent
+        ├── drv : my_driver → fast_driver
+        └── mon : my_monitor  [conditional]
+```
+
+Nodes are instances, named from `uvm_test_top` as UVM names them, and are
+listed in the order UVM builds them (children in name order). A type an
+override changed reads `declared → built`; both names are cross-references.
+Each instance is worked out on its own, so an inst override on `env.agt_b.mon`
+changes that monitor and not `agt_a`'s, which is why siblings are never folded.
+Problems found on the way (an override ignored because it passed `replace=0`,
+one in a function nothing reaches, a loop of overrides) are listed under the
+tree.
+
+This is the same tree `svdb uvm-tree` exports ([Exporting the UVM component
+tree](uvm-tree-export.md)), which says how it is worked out and what it
+assumes: every `if` taken, loops as one node, `config_db` not read. With
+`sv_databases`, it is stitched from the databases' records, so a VIP's
+classes can come from the VIP's database. If it cannot be built, the page
+warns and shows the tree as written.
+
+The default stays annotate-only because the resolved tree is a claim about a
+run, and those assumptions are where it can be wrong.
 
 ### The five ways to write one
 

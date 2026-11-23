@@ -145,13 +145,23 @@ ACTION_GET = "get"
 #: connection apart from the many other methods called ``connect``.
 PORT_BASE = "uvm_port_base"
 
-#: The method UVM connects components in.  Scanning only this one is a
-#: deliberate narrowing: a ``connect`` **call** is unambiguous wherever it is
-#: written, but a component-handle *assignment* is only wiring by convention,
-#: and that convention is exactly "it happens in ``connect_phase``".  Reading
-#: assignments from arbitrary methods would turn every ``m_parent = parent`` in
-#: a constructor into an edge.
+#: The method UVM connects components in.  Connections are read from every
+#: function a class defines except its constructor, each tagged with its
+#: function, and only those ``connect_phase`` reaches (directly or through
+#: helpers it calls) are wiring.  A ``connect`` **call** is unambiguous wherever
+#: it is written, but a component-handle *assignment* is only wiring by
+#: convention, and that convention is exactly "it happens in
+#: ``connect_phase``": reading constructors would turn every
+#: ``m_parent = parent`` into an edge.
 CONNECT_PHASE = "connect_phase"
+
+#: The method UVM builds children in.  Creates are read from every function a
+#: class defines, each tagged with its function; ``build_phase``, the
+#: constructor and the helpers they call are what actually build.
+BUILD_PHASE = "build_phase"
+
+#: The constructor's name, which is also its name as a method.
+CONSTRUCTOR = "new"
 
 #: How a port is named at its end of a connection.  Taken from the port type's
 #: own name rather than from anything structural, because that suffix *is* the
@@ -193,6 +203,13 @@ _ARG_CNTXT, _ARG_SCOPE, _ARG_FIELD, _ARG_VALUE = 0, 1, 2, 3
 #: only under a matching hierarchical path.
 OVERRIDE_TYPE = "type"
 OVERRIDE_INST = "inst"
+
+#: What an inst override's path is relative to.  ``uvm_component``'s forms
+#: prefix the calling component's full name; ``uvm_factory``'s take the path
+#: as is; the registry forms do either, depending on their ``parent``.
+PATH_BASE_OWNER = "owner"
+PATH_BASE_ABSOLUTE = "absolute"
+PATH_BASE_UNKNOWN = "unknown"
 
 #: ``(declaring class, method) -> (kind, original arg, override arg, path arg)``.
 #:
@@ -550,6 +567,8 @@ class UvmStructure:
 
     #: Type name of the root component (``my_test``), or ``""`` if unresolved.
     root: str = ""
+    #: Qualified name of the root's class (``pkg::my_test``), when resolved.
+    root_key: str = ""
     #: How the root was determined: ``"config"``, ``"run_test"`` or ``""``.
     root_origin: str = ""
     #: Component type name -> the children its ``build_phase`` creates.
@@ -648,6 +667,38 @@ class UvmPort:
 
 
 @dataclass(frozen=True)
+class UvmCall:
+    """A call a method makes that the stitcher can follow.
+
+    Only calls whose receiver is implicit, ``this`` or ``super`` and whose
+    callee is a function of the class or one of its (non-library) bases: those
+    are the ones whose target follows from the type of the component alone.
+    """
+
+    #: Position in the method's call enumeration (:func:`_syntax_calls`).
+    step: int = 0
+    #: Name of the function called.
+    method: str = ""
+    #: A ``super.m()`` call: bound from the base of the defining class rather
+    #: than dispatched from the actual type.
+    super: bool = False
+    #: True when the call sits under an ``if``/``case`` and may not run.
+    conditional: bool = False
+    #: ``"1"``, or ``"N"`` for a call inside a loop.
+    multiplicity: str = "1"
+
+
+@dataclass(frozen=True)
+class UvmMethod:
+    """One function a class defines itself, and the calls it makes."""
+
+    name: str = ""
+    #: Declared ``virtual``, or overriding a virtual function of a base.
+    virtual: bool = False
+    calls: tuple[UvmCall, ...] = ()
+
+
+@dataclass(frozen=True)
 class UvmType:
     """What is known about one component *type*, independent of any use of it."""
 
@@ -660,10 +711,22 @@ class UvmType:
     tier: str = ""
     #: TLM ports this type declares, in declaration order.
     ports: tuple[UvmPort, ...] = ()
+    #: Every function this class itself defines, in declaration order.  A
+    #: function that is not here is inherited.
+    methods: tuple[UvmMethod, ...] = ()
+    #: A ``virtual class``: never built itself, only derived from.
+    abstract: bool = False
+    #: The class's qualified name, its key in a database (``pkg::my_env``).
+    key: str = ""
+    #: :attr:`key` of the immediate base class, or ``""`` for none.
+    base: str = ""
     location: SourceRef | None = None
 
     def port(self, name: str) -> UvmPort | None:
         return next((p for p in self.ports if p.name == name), None)
+
+    def method(self, name: str) -> UvmMethod | None:
+        return next((m for m in self.methods if m.name == name), None)
 
 
 @dataclass(frozen=True)
@@ -713,6 +776,11 @@ class UvmConnection:
     kind: str = LINK_TLM
     #: True when the connection sits under an ``if``/``case`` and may not happen.
     conditional: bool = False
+    #: The function the connection is written in.
+    method: str = CONNECT_PHASE
+    #: Position of the call in that function (:func:`_syntax_calls`); ``None``
+    #: for a handle assignment, which is not a call.
+    step: int | None = None
     location: SourceRef | None = None
 
 
@@ -824,6 +892,13 @@ class UvmChild:
     state: str = STATE_OK
     #: :data:`KIND_COMPONENT` or :data:`KIND_PORT`.
     kind: str = KIND_COMPONENT
+    #: The function the create is written in.
+    method: str = BUILD_PHASE
+    #: Position of the create in that function (:func:`_syntax_calls`);
+    #: ``None`` for a member recovered from its declaration.
+    step: int | None = None
+    #: Qualified name of :attr:`type_name`'s class, or ``""`` when unresolved.
+    type_key: str = ""
     location: SourceRef | None = None
 
     @property
@@ -1020,6 +1095,21 @@ class UvmOverride:
     method: str = ""
     #: True when the override sits under an ``if``/``case`` and may not run.
     conditional: bool = False
+    #: Position of the call in :attr:`method` (:func:`_syntax_calls`), or
+    #: ``None`` outside a class method.
+    step: int | None = None
+    #: False when the call passed ``replace=0``: a type override that leaves
+    #: an earlier one for the same type in place.
+    replace: bool = True
+    #: For an inst override, what :attr:`inst_path` is relative to: one of the
+    #: ``PATH_BASE_*`` constants.  ``""`` for a type override.
+    path_base: str = ""
+    #: Qualified names of :attr:`owner`, :attr:`original` and
+    #: :attr:`replacement`, where the source resolves them (a ``get_type()``
+    #: argument does; a by-name string does not).
+    owner_key: str = ""
+    original_key: str = ""
+    replacement_key: str = ""
     #: Names in this override that match no class in the parsed sources.  The
     #: by-name forms take strings, so a typo compiles and silently never
     #: applies; this is the only place that can be noticed.
@@ -1180,6 +1270,11 @@ class _Site:
     kind: str = KIND_COMPONENT
     location: SourceRef | None = None
     symbol: Any = None
+    method: str = ""
+    step: int | None = None
+    type_key: str = ""
+    #: The create's expression or syntax node, to look its step up by.
+    node: Any = None
 
     def to_child(self) -> UvmChild:
         return UvmChild(
@@ -1191,25 +1286,74 @@ class _Site:
             multiplicity=self.multiplicity,
             state=self.state,
             kind=self.kind,
+            method=self.method or BUILD_PHASE,
+            step=self.step,
+            type_key=self.type_key,
             location=self.location,
         )
 
 
-class _WalkState:
-    """Shared budget across one walk.  Mirrors ``structure._WalkState``."""
+class _LiveModel:
+    """:class:`~..svdb.uvm_inline.ClassModel` over the compiled classes.
 
-    def __init__(self, budget: int) -> None:
-        self.budget = budget
-        self.visited = 0
-        self.truncated = False
+    Keys are registered as the walk meets symbols (a root, a created type, a
+    base), because a specialization has no other way in.  Library classes are
+    unknown to it: they write nothing the walk follows.
+    """
 
-    def take(self) -> bool:
-        """Claim one component, or report exhaustion."""
-        if self.visited >= self.budget:
-            self.truncated = True
-            return False
-        self.visited += 1
-        return True
+    def __init__(self, provider: "UvmProvider") -> None:
+        self._provider = provider
+        self._symbols: dict[str, Any] = {}
+        #: Display type name -> the symbol a create named, for :meth:`describe`.
+        self._exact: dict[str, Any] = {}
+
+    def register(self, symbol: Any) -> str:
+        key = _class_key(symbol)
+        if key:
+            self._symbols.setdefault(key, symbol)
+        return key
+
+    def type(self, key: str) -> UvmType | None:
+        symbol = self._symbols.get(key)
+        if symbol is None or getattr(symbol, "name", "").startswith(_LIBRARY_PREFIX):
+            return None
+        return self._provider._own_view(symbol)[0]
+
+    def base(self, key: str) -> str | None:
+        symbol = self._symbols.get(key)
+        base = getattr(symbol, "baseClass", None)
+        return self.register(base) if base is not None else None
+
+    def items(self, key: str, method: str) -> list[Any]:
+        _t, sites, connections = self._provider._own_view(self._symbols[key])
+        return ([s for s in sites if s.method == method]
+                + [c for c in connections if c.method == method])
+
+    # -- the walk's output (svdb.uvm_inline.WalkModel) --
+
+    def describe(self, key: str, display: str) -> UvmType:
+        # The exact symbol a create named: a specialization describes its own
+        # ports, while the class key is its generic class's.
+        symbol = self._exact.get(display) or self._symbols[key]
+        return self._provider._describe(display, symbol)
+
+    def is_child(self, item: Any) -> bool:
+        return isinstance(item, _Site)
+
+    def child(self, reached: Any) -> tuple[UvmChild, str | None]:
+        site = reached.item
+        child = replace(site.to_child(), conditional=reached.conditional,
+                        multiplicity=reached.multiplicity)
+        if site.state != STATE_OK or site.symbol is None:
+            return child, None
+        self._exact.setdefault(site.type_name, site.symbol)
+        return child, self.register(site.symbol)
+
+    def connection(self, reached: Any, display: str) -> UvmConnection | None:
+        c = reached.item
+        if not isinstance(c, UvmConnection):
+            return None
+        return replace(c, owner=display, conditional=reached.conditional)
 
 
 class UvmProvider:
@@ -1274,6 +1418,16 @@ class UvmProvider:
         self._bridge: UvmBridge | None = None
         #: Number of bridge scans performed; asserted by the same test.
         self.bridge_walk_count = 0
+        #: Stitched trees (``sv:uvm-tree :resolved:``) by requested root.
+        self._trees: dict[str, Any] = {}
+        #: :meth:`classes`, once computed.
+        self._classes: UvmStructure | None = None
+        #: :meth:`_own_view` by class key.
+        self._views: dict[str, tuple[UvmType, list[_Site], list[UvmConnection]]] = {}
+        #: Call enumerations by method, keyed by where the method's syntax
+        #: starts: the creation, connection and override scans and the method
+        #: table each ask for the same method's steps.
+        self._steps: dict[tuple[int, int], _Steps] = {}
 
     @property
     def computed(self) -> bool:
@@ -1379,10 +1533,16 @@ class UvmProvider:
         if not root_name or root_name not in classes:
             return structure
 
-        state = _WalkState(self._max_components)
-        self._descend(root_name, classes[root_name], classes, structure, state, 0)
-        structure.component_count = state.visited
-        structure.truncated = state.truncated
+        from ..svdb.uvm_inline import walk
+
+        model = _LiveModel(self)
+        structure.root_key = model.register(classes[root_name])
+        found = walk(model, structure.root_key, root_name,
+                     budget=self._max_components, max_depth=MAX_DEPTH)
+        structure.types, structure.children, structure.connections = (
+            found.types, found.children, found.connections)
+        structure.component_count = found.visited
+        structure.truncated = found.truncated
         return structure
 
     # -- symbol discovery -----------------------------------------------------
@@ -1483,42 +1643,61 @@ class UvmProvider:
 
     # -- the descent ----------------------------------------------------------
 
-    def _descend(
-        self,
-        type_name: str,
-        type_symbol: Any,
-        classes: dict[str, Any],
-        structure: UvmStructure,
-        state: "_WalkState",
-        depth: int,
-    ) -> None:
-        """Record what *type_symbol*'s ``build_phase`` builds, then recurse.
-
-        Memoized by type name: a testbench that instantiates two agents of the
-        same type describes that type once.  That also terminates cycles, which
-        a mutually-recursive ``build_phase`` can legally create.
+    def uvm_tree(self, root: str = ""):
+        """The tree a simulation would build from *root*, factory overrides
+        applied: :func:`~..svdb.uvm_tree.stitch_records` over this provider's
+        per-class and override records, as ``svdb uvm-tree`` stitches them
+        from a database. Memoized per root.
         """
-        if type_name in structure.children:
-            return
-        if depth >= MAX_DEPTH or not state.take():
-            structure.truncated = True
-            return
+        if root not in self._trees:
+            from ..frontend.uvm import UvmViews, records
+            from ..svdb.uvm_tree import stitch_records
 
-        structure.types.setdefault(type_name, self._describe(type_name, type_symbol))
-        structure.connections.setdefault(
-            type_name, self._connections_of(type_name, type_symbol)
-        )
-        sites = self._children_of(type_symbol)
-        # The pyslang symbol stays on `_Site` and stops here: what goes into the
-        # structure is plain data, which is what makes the structure picklable.
-        structure.children[type_name] = [site.to_child() for site in sites]
+            structure = self.get(root)
+            # After the walk, so that classes() holds its parameterized views.
+            views = UvmViews(structure=structure, classes=self.classes(), overrides=self.overrides())
+            self._trees[root] = stitch_records(
+                records(views, _path_loc), structure.root_key or structure.root or None)
+        return self._trees[root]
 
-        for site in sites:
-            if site.state != STATE_OK or site.symbol is None:
-                continue
-            self._descend(
-                site.type_name, site.symbol, classes, structure, state, depth + 1
-            )
+    def classes(self) -> UvmStructure:
+        """Every component class's own partial elaboration (stitching plan A3).
+
+        One entry per non-library component class, reachable from a root or
+        not, keyed by qualified name so that same-named classes in two
+        packages stay apart.  Each holds what the class itself writes ---
+        every create, connection and the method table --- with nothing merged
+        from its bases: the stitcher (``svdb.uvm_tree``) does that, following
+        the calls.  Memoized; ``root`` and the walk counters are left unset.
+        """
+        if self._classes is None:
+            out = UvmStructure()
+            for symbol in self._iter_classes():
+                name = getattr(symbol, "name", "")
+                if not name or name.startswith(_LIBRARY_PREFIX):
+                    continue
+                chain = base_chain(symbol)
+                if not is_component(chain) or is_port(chain):
+                    continue
+                t, children, connections = self._class_view(symbol)
+                out.types[t.key] = t
+                out.children[t.key] = children
+                out.connections[t.key] = connections
+            self._classes = out
+        # A parameterized class is not in the scan (only its specializations
+        # are classes), but a walk that met one has its view: keep it, so the
+        # records hold every class a tree reaches.
+        for key, (t, sites, connections) in self._views.items():
+            if key not in self._classes.types and not t.name.startswith(_LIBRARY_PREFIX):
+                self._classes.types[key] = t
+                self._classes.children[key] = [site.to_child() for site in sites]
+                self._classes.connections[key] = list(connections)
+        return self._classes
+
+    def _class_view(self, type_symbol: Any) -> tuple[UvmType, list[UvmChild], list[UvmConnection]]:
+        """What *type_symbol* itself writes, without recursing into anything."""
+        t, sites, connections = self._own_view(type_symbol)
+        return t, [site.to_child() for site in sites], list(connections)
 
     def _describe(self, type_name: str, type_symbol: Any) -> UvmType:
         chain = base_chain(type_symbol)
@@ -1529,10 +1708,118 @@ class UvmProvider:
             kind=kind,
             tier=tier,
             ports=tuple(self._ports_of(type_symbol)),
+            methods=self._method_table(type_symbol),
+            abstract=bool(getattr(type_symbol, "isAbstract", False)),
+            key=_class_key(type_symbol),
+            base=_class_key(getattr(type_symbol, "baseClass", None)),
             location=resolve_location(
                 self._source_manager, getattr(type_symbol, "location", None)
             ),
         )
+
+    # -- methods and their calls ------------------------------------------------
+
+    def _call_steps(self, member: Any) -> _Steps:
+        """The calls in *member*'s body, numbered (:func:`_syntax_calls`)."""
+        syntax = getattr(member, "syntax", None)
+        try:
+            start = syntax.sourceRange.start
+            key = (start.buffer.id, start.offset)
+        except AttributeError:
+            return _EMPTY_STEPS
+        steps = self._steps.get(key)
+        if steps is None:
+            steps = self._steps[key] = _Steps(_syntax_calls(syntax))
+        return steps
+
+    def _own_functions(self, type_symbol: Any) -> list[Any]:
+        """The functions *type_symbol* defines itself, in declaration order.
+
+        Built-in methods (``randomize`` and friends) have no syntax, and the
+        ones a registration macro expands to (``get_type``, ``create``) are
+        library plumbing that every class has: neither is the class's own.
+        """
+        from pyslang.ast import SubroutineKind, SymbolKind
+
+        try:
+            members = list(type_symbol)
+        except TypeError:
+            return []
+        found = []
+        for member in members:
+            if getattr(member, "kind", None) != SymbolKind.Subroutine:
+                continue
+            if getattr(member, "subroutineKind", None) != SubroutineKind.Function:
+                continue
+            syntax = getattr(member, "syntax", None)
+            if syntax is None:
+                continue
+            try:
+                if self._source_manager.isMacroLoc(syntax.sourceRange.start):
+                    continue
+            except Exception:
+                pass
+            found.append(member)
+        return found
+
+    def _method_table(self, type_symbol: Any) -> tuple[UvmMethod, ...]:
+        """:attr:`UvmType.methods`: each own function and the calls it makes.
+
+        A call is kept when the stitcher can follow it from the component's
+        type alone: its receiver is implicit, ``this`` or ``super``, and it
+        names a function of this class or a non-library base.  Library
+        functions are left out --- the phases' ``super.build_phase(phase)``
+        into ``uvm_component`` builds nothing --- and so are the override and
+        ``config_db`` calls, which are records of their own.
+        """
+        defined = self._chain_functions(type_symbol)
+        own = getattr(type_symbol, "name", "")
+        out = []
+        for member in self._own_functions(type_symbol):
+            calls = []
+            for call in self._call_steps(member).calls:
+                if call.receiver not in ("", "this", "super"):
+                    continue
+                owners = defined.get(call.name, ())
+                if call.receiver == "super":
+                    owners = [o for o in owners if o != own]
+                elif call.name == CONSTRUCTOR:
+                    continue
+                if not owners or owners[0].startswith(_LIBRARY_PREFIX):
+                    continue
+                calls.append(UvmCall(
+                    step=call.step,
+                    method=call.name,
+                    super=call.receiver == "super",
+                    conditional=call.conditional,
+                    multiplicity="N" if call.in_loop else "1",
+                ))
+            out.append(UvmMethod(
+                name=getattr(member, "name", ""),
+                virtual=bool(getattr(member, "isVirtual", False)),
+                calls=tuple(calls),
+            ))
+        return tuple(out)
+
+    def _chain_functions(self, type_symbol: Any) -> dict[str, list[str]]:
+        """Function name -> the classes defining it, most-derived first."""
+        from pyslang.ast import SymbolKind
+
+        found: dict[str, list[str]] = {}
+        seen: set[int] = set()
+        current = type_symbol
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            owner = getattr(current, "name", "")
+            try:
+                members = list(current)
+            except TypeError:
+                members = []
+            for member in members:
+                if getattr(member, "kind", None) == SymbolKind.Subroutine:
+                    found.setdefault(getattr(member, "name", ""), []).append(owner)
+            current = getattr(current, "baseClass", None)
+        return found
 
     def _ports_of(self, type_symbol: Any) -> list[UvmPort]:
         """TLM ports declared by this class and by everything it derives from.
@@ -1581,27 +1868,27 @@ class UvmProvider:
     # -- connect_phase --------------------------------------------------------
 
     def _connections_of(self, type_name: str, type_symbol: Any) -> list[UvmConnection]:
-        """Every connection written in this class's ``connect_phase``."""
-        from pyslang.ast import SymbolKind
+        """Every connection written in a function of this class, tagged with it.
 
-        try:
-            members = list(type_symbol)
-        except TypeError:
-            return []
-
+        Constructors are skipped (see :data:`CONNECT_PHASE`).
+        """
         found: list[UvmConnection] = []
-        for member in members:
-            if getattr(member, "kind", None) != SymbolKind.Subroutine:
+        for member in self._own_functions(type_symbol):
+            name = getattr(member, "name", "")
+            if name == CONSTRUCTOR:
                 continue
-            if getattr(member, "name", "") != CONNECT_PHASE:
-                continue
+            written: list[tuple[UvmConnection, Any]] = []
             self._collect_connections(
-                getattr(member, "body", None), found, type_name, conditional=False
+                getattr(member, "body", None), written, type_name, conditional=False
             )
+            steps = self._call_steps(member)
+            for connection, expr in written:
+                step = steps.of(expr) if connection.kind != LINK_HANDLE else None
+                found.append(replace(connection, method=name, step=step))
         return found
 
     def _collect_connections(
-        self, stmt: Any, out: list[UvmConnection], owner: str,
+        self, stmt: Any, out: list[tuple[UvmConnection, Any]], owner: str,
         conditional: bool, depth: int = 0,
     ) -> None:
         """Walk statements for ``connect`` calls and handle assignments.
@@ -1619,11 +1906,10 @@ class UvmProvider:
         kind = getattr(stmt, "kind", None)
 
         if kind == StatementKind.ExpressionStatement:
-            connection = self._connection(
-                getattr(stmt, "expr", None), owner, conditional
-            )
+            expr = getattr(stmt, "expr", None)
+            connection = self._connection(expr, owner, conditional)
             if connection is not None:
-                out.append(connection)
+                out.append((connection, _unwrap(expr)))
             return
 
         if kind == StatementKind.Conditional:
@@ -2031,11 +2317,16 @@ class UvmProvider:
         )]
 
     def _children_of(self, type_symbol: Any) -> list["_Site"]:
-        """Every component this class's ``build_phase`` builds.
+        """Every component a component of this type builds.
 
-        Two sources, and both are needed:
+        What its constructor and ``build_phase`` reach when they run (the
+        ``run`` rule of :mod:`..svdb.uvm_inline`): an inherited
+        ``build_phase``, ``super.build_phase``, and helpers they call, with an
+        ``if`` or a loop around a call carried onto what it creates.  The
+        declared type only --- factory overrides are annotations here, applied
+        by the stitcher.  Two sources of sites, and both are needed:
 
-        * **creation sites** in ``build_phase`` --- the ordinary case;
+        * **creation sites** --- the ordinary case;
         * **unresolved members**, which do *not* appear as creation sites at
           all.  When a type cannot be resolved, slang discards the whole
           statement that used it, so the create simply is not in the AST.  A
@@ -2043,34 +2334,67 @@ class UvmProvider:
           tree that looks complete.  Scanning the class's own properties for
           the ``<error>`` type is what recovers those nodes.
         """
-        sites = self._creation_sites(type_symbol)
-        built = {site.handle for site in sites if site.handle}
-        return sites + self._unresolved_members(type_symbol, built)
+        from ..svdb.uvm_inline import effective_children
+
+        model = _LiveModel(self)
+        return [replace(r.item, conditional=r.conditional, multiplicity=r.multiplicity)
+                for r in effective_children(model, model.register(type_symbol))]
+
+    def _effective_connections(self, type_name: str, type_symbol: Any) -> list[UvmConnection]:
+        """What ``connect_phase`` wires on a component of *type_symbol*.
+
+        Inherited and helper connections included (:func:`_children_of`'s
+        rule).  Their endpoints are relative to the component either way, so
+        each is reported as *type_name*'s.
+        """
+        from ..svdb.uvm_inline import run
+
+        model = _LiveModel(self)
+        found = (model.connection(r, type_name)
+                 for r in run(model, model.register(type_symbol), CONNECT_PHASE).items)
+        return [c for c in found if c is not None]
+
+    def _own_view(self, type_symbol: Any) -> tuple[UvmType, list["_Site"], list[UvmConnection]]:
+        """What *type_symbol* itself writes, memoized by class key.
+
+        Sites keep their symbols, for the walk to recurse through.  A member
+        whose type did not resolve is reported as created in ``build_phase``,
+        after everything else, since its create is not in the AST at all.
+        """
+        key = _class_key(type_symbol)
+        view = self._views.get(key)
+        if view is None:
+            name = getattr(type_symbol, "name", "")
+            sites = self._creation_sites(type_symbol)
+            built = {site.handle for site in sites if site.handle}
+            for site in self._unresolved_members(type_symbol, built):
+                site.method = BUILD_PHASE
+                sites.append(site)
+            view = self._views[key] = (self._describe(name, type_symbol), sites,
+                                       self._connections_of(name, type_symbol))
+        return view
 
     def _creation_sites(self, type_symbol: Any) -> list["_Site"]:
-        from pyslang.ast import StatementKind, SymbolKind
-
-        try:
-            members = list(type_symbol)
-        except TypeError:
-            return []
+        """Every create in every function this class defines, tagged with it."""
+        from pyslang.ast import StatementKind
 
         sites: list[_Site] = []
-        for member in members:
-            if getattr(member, "kind", None) != SymbolKind.Subroutine:
-                continue
-            if getattr(member, "name", "") != "build_phase":
-                continue
+        for member in self._own_functions(type_symbol):
+            found: list[_Site] = []
             body = getattr(member, "body", None)
             if getattr(body, "kind", None) == StatementKind.Invalid:
                 self._visit_syntax(
-                    getattr(member, "syntax", None), type_symbol, sites,
+                    getattr(member, "syntax", None), type_symbol, found,
                     conditional=False, in_loop=False,
                 )
-                continue
-            self._visit_statement(
-                getattr(member, "body", None), sites, conditional=False, in_loop=False
-            )
+            else:
+                self._visit_statement(body, found, conditional=False, in_loop=False)
+            steps = self._call_steps(member)
+            for site in found:
+                site.method = getattr(member, "name", "")
+                site.step = steps.of(site.node)
+                site.node = None
+            sites.extend(found)
         return sites
 
     def _visit_statement(
@@ -2178,8 +2502,10 @@ class UvmProvider:
             return None
 
         node_kind, _tier = classify(chain)
+        type_key = _class_key(symbol)
         state, symbol = self._boundary(type_name, chain, symbol)
         return _Site(
+            type_key=type_key,
             handle=handle,
             inst_name=inst_name,
             type_name=type_name,
@@ -2190,6 +2516,7 @@ class UvmProvider:
             kind=node_kind,
             location=_location_of(self._source_manager, where),
             symbol=symbol,
+            node=where,
         )
 
     def _visit_syntax(
@@ -2386,18 +2713,25 @@ class UvmProvider:
                 members = list(class_symbol)
             except TypeError:
                 continue
+            first = len(sink.overrides)
             for member in members:
                 if getattr(member, "kind", None) != SymbolKind.Subroutine:
                     continue
+                sink.steps = self._call_steps(member)
                 self._collect_config(
                     getattr(member, "body", None),
                     sink,
                     owner,
                     getattr(member, "name", ""),
                 )
+            sink.steps = _EMPTY_STEPS
+            key = _class_key(class_symbol)
+            sink.overrides[first:] = [replace(o, owner_key=key) for o in sink.overrides[first:]]
 
         for owner, block in self._iter_module_blocks():
+            first = len(sink.overrides)
             self._collect_config(block, sink, owner, "")
+            sink.overrides[first:] = [replace(o, owner_key=owner) for o in sink.overrides[first:]]
 
         # Resolved once, at the end, rather than per call: the class index is
         # the same for all of them, and a by-name override that names nothing
@@ -2560,7 +2894,7 @@ class UvmProvider:
             else:
                 override = self._override(expr, owner, method, conditional)
                 if override is not None:
-                    sink.overrides.append(override)
+                    sink.overrides.append(replace(override, step=sink.steps.of(expr)))
 
         for attr in _EXPRESSION_ATTRS:
             value = getattr(expr, attr, None)
@@ -2647,6 +2981,10 @@ class UvmProvider:
         return UvmOverride(
             original=original,
             replacement=replacement,
+            original_key=(
+                "" if original_arg is None else _override_type_key(_argument(call, original_arg))
+            ),
+            replacement_key=_override_type_key(_argument(call, override_arg)),
             kind=kind,
             inst_path=(
                 "" if path_arg is None else _string_argument(call, path_arg)
@@ -2654,6 +2992,13 @@ class UvmProvider:
             owner=owner,
             method=method,
             conditional=conditional,
+            # Every type form takes `replace` right after the override type.
+            replace=(kind != OVERRIDE_TYPE
+                     or _bit_argument(call, override_arg + 1) is not False),
+            path_base=(
+                "" if kind != OVERRIDE_INST
+                else _path_base(parts[-2], call, path_arg + 1)
+            ),
             location=_location_of(self._source_manager, call),
         )
 
@@ -3032,22 +3377,29 @@ def _endpoint(expr: Any) -> UvmEndpoint | None:
         return None
 
     names: list[str] = []
+    # `agts[i].mon.ap`: the select belongs to the next name up the chain.
+    select = ""
     node = expr
     for _ in range(16):
         if node is None:
             break
         kind = getattr(node, "kind", None)
+        if kind == ExpressionKind.ElementSelect:
+            select = f"[{_expression_text(getattr(node, 'selector', None))}]{select}"
+            node = _unwrap(getattr(node, "value", None))
+            continue
         if kind == ExpressionKind.MemberAccess:
             name = getattr(getattr(node, "member", None), "name", "")
             if not name:
                 return None
-            names.append(name)
+            names.append(name + select)
+            select = ""
             node = _unwrap(getattr(node, "value", None))
             continue
         if kind == ExpressionKind.NamedValue:
             name = getattr(getattr(node, "symbol", None), "name", "")
             if name:
-                names.append(name)
+                names.append(name + select)
             break
         # `this`, a hierarchical reference, a call: stop and keep what resolved.
         break
@@ -3125,6 +3477,8 @@ class _CallSink:
 
     accesses: list[UvmConfigAccess] = field(default_factory=list)
     overrides: list[UvmOverride] = field(default_factory=list)
+    #: The calls of the method being scanned, to number overrides by.
+    steps: "_Steps" = field(default_factory=lambda: _EMPTY_STEPS)
 
 
 def _registry_tname(subroutine: Any) -> str | None:
@@ -3179,6 +3533,23 @@ def _override_type_name(expr: Any) -> str | None:
         if len(parts) >= 2 and parts[-1] == _GET_TYPE:
             return parts[-2]
     return None
+
+
+def _override_type_key(expr: Any) -> str:
+    """The qualified name of the class a ``T::get_type()`` argument names.
+
+    ``""`` for the by-name (string) form, which names no class until it is
+    looked up.
+    """
+    from pyslang.ast import ExpressionKind
+
+    expr = _unwrap(expr)
+    if getattr(expr, "kind", None) != ExpressionKind.Call:
+        return ""
+    parts = (getattr(getattr(expr, "subroutine", None), "lexicalPath", "") or "").split("::")
+    if len(parts) >= 2 and parts[-1] == _GET_TYPE:
+        return "::".join(parts[:-1]).removeprefix("$unit::")
+    return ""
 
 
 def _instance_path(symbol: Any) -> str:
@@ -3363,3 +3734,204 @@ def _calls_named(stmt: Any, name: str, depth: int = 0) -> list:
         elif value is not None and hasattr(value, "kind"):
             found.extend(_calls_named(value, name, depth + 1))
     return found
+
+
+# -- call steps ------------------------------------------------------------------
+#
+# The stitcher replays a method's creates, overrides, connections and helper
+# calls in the order they run, so each of them carries its position among the
+# method's calls.  The positions come from the method's *syntax*, not from the
+# bound statements, for two reasons: the syntax survives when slang marks the
+# whole body invalid (the fallback :meth:`UvmProvider._visit_syntax` reads),
+# and one enumeration shared by every scan is what makes the positions agree.
+
+
+@dataclass(frozen=True)
+class _SyntaxCall:
+    """One call in a method body, as written."""
+
+    #: ``(buffer id, start offset)`` of the call's source range.
+    key: tuple[int, int]
+    end: int
+    step: int
+    #: ``""`` (implicit), ``"this"``, ``"super"`` or ``"other"``.
+    receiver: str
+    #: The function called, or ``"new"`` for a construction.
+    name: str
+    conditional: bool
+    in_loop: bool
+
+
+class _Steps:
+    """The calls of one method, looked up by an expression or syntax node."""
+
+    def __init__(self, calls: list[_SyntaxCall]) -> None:
+        self.calls = calls
+        self._by_key: dict[tuple[int, int], list[_SyntaxCall]] = {}
+        for call in calls:
+            self._by_key.setdefault(call.key, []).append(call)
+
+    def of(self, node: Any) -> int | None:
+        """The step of the call *node* is (an AST ``Call``/``NewClass`` or its syntax).
+
+        Matched on where the call starts.  Chained calls start at the same
+        place (``a::type_id::create(...).f()``), so the end breaks the tie: an
+        AST call's range can stop short of its argument list, so the match is
+        the shortest call that still covers it.
+        """
+        source_range = getattr(node, "sourceRange", None)
+        if source_range is None:
+            return None
+        try:
+            start, end = source_range.start, source_range.end
+            candidates = self._by_key.get((start.buffer.id, start.offset))
+        except AttributeError:
+            return None
+        if not candidates:
+            return None
+        covering = [c for c in candidates if c.end >= end.offset]
+        if covering:
+            return min(covering, key=lambda c: c.end).step
+        return max(candidates, key=lambda c: c.end).step
+
+
+_EMPTY_STEPS = _Steps([])
+
+
+def _syntax_calls(root: Any) -> list[_SyntaxCall]:
+    """Every call under *root*, numbered in the order they run.
+
+    Post-order, which is evaluation order for the expressions that matter: an
+    argument or receiver call (``create(...)`` in ``create(...).f()``) runs
+    before the call it feeds.  A call statement written without parentheses
+    (``helper;``) is a call too.  ``if`` and ``case`` branches are
+    conditional, their conditions are not; everything in a loop is in it.
+    """
+    from pyslang.syntax import SyntaxKind, SyntaxNode
+
+    loops = {
+        SyntaxKind.ForLoopStatement, SyntaxKind.ForeachLoopStatement,
+        SyntaxKind.LoopStatement, SyntaxKind.DoWhileStatement,
+        SyntaxKind.ForeverStatement,
+    }
+    bare = {SyntaxKind.IdentifierName, SyntaxKind.ScopedName}
+    calls: list[_SyntaxCall] = []
+
+    def add(node: Any, target: Any, conditional: bool, in_loop: bool) -> None:
+        try:
+            start, end = node.sourceRange.start, node.sourceRange.end
+            key = (start.buffer.id, start.offset)
+        except AttributeError:
+            return
+        receiver, name = _call_target(target)
+        calls.append(_SyntaxCall(key, end.offset, len(calls), receiver, name,
+                                 conditional, in_loop))
+
+    def visit(node: Any, conditional: bool, in_loop: bool, depth: int) -> None:
+        if depth > 256:
+            return
+        kind = node.kind
+        if kind in loops:
+            in_loop = True
+        for child in node:
+            if not isinstance(child, SyntaxNode):
+                continue
+            branch = conditional
+            if kind == SyntaxKind.ConditionalStatement:
+                branch = conditional or child.kind != SyntaxKind.ConditionalPredicate
+            elif kind == SyntaxKind.CaseStatement:
+                branch = conditional or child is not getattr(node, "expr", None)
+            visit(child, branch, in_loop, depth + 1)
+        if kind == SyntaxKind.InvocationExpression:
+            add(node, getattr(node, "left", None), conditional, in_loop)
+        elif kind == SyntaxKind.NewClassExpression:
+            add(node, node, conditional, in_loop)
+        elif kind == SyntaxKind.ExpressionStatement:
+            expr = getattr(node, "expr", None)
+            if getattr(expr, "kind", None) in bare:
+                add(expr, expr, conditional, in_loop)
+
+    if root is not None:
+        visit(root, False, False, 0)
+    return calls
+
+
+def _call_target(node: Any) -> tuple[str, str]:
+    """``(receiver, name)`` of a call, from the text of what is called."""
+    from pyslang.syntax import SyntaxKind
+
+    text = "".join(str(node).split()) if node is not None else ""
+    if getattr(node, "kind", None) == SyntaxKind.NewClassExpression:
+        return ("super", CONSTRUCTOR) if text.startswith("super.new") else ("other", CONSTRUCTOR)
+    if not text or text.startswith("$") or "::" in text:
+        return "other", text.rsplit("::", 1)[-1]
+    parts = text.split(".")
+    if len(parts) == 1:
+        return "", parts[0]
+    if len(parts) == 2 and parts[0] in ("this", "super"):
+        return parts[0], parts[1]
+    return "other", parts[-1]
+
+
+def _bit_argument(call: Any, position: int) -> bool | None:
+    """A call argument's constant truth value, or ``None`` when not constant.
+
+    A defaulted argument is there too: slang binds the declaration's default
+    in its place.
+    """
+    constant = getattr(_unwrap(_argument(call, position)), "constant", None)
+    if constant is None:
+        return None
+    if constant.isTrue():
+        return True
+    return False if constant.isFalse() else None
+
+
+def _path_base(declaring_class: str, call: Any, parent_arg: int) -> str:
+    """What an inst override's path is relative to (:attr:`UvmOverride.path_base`).
+
+    ``uvm_component`` prefixes the full name of the component it is called on,
+    which is the caller's own unless it is called through another handle.
+    ``uvm_factory`` takes the path as given.  A registry's
+    ``set_inst_override(override, path, parent)`` prefixes ``parent``'s name
+    when there is one.
+    """
+    from pyslang.ast import ExpressionKind
+
+    if declaring_class == "uvm_factory":
+        return PATH_BASE_ABSOLUTE
+    if declaring_class == "uvm_component":
+        receiver = _unwrap(getattr(call, "thisClass", None))
+        return PATH_BASE_OWNER if receiver is None or _is_this(receiver) else PATH_BASE_UNKNOWN
+    parent = _unwrap(_argument(call, parent_arg))
+    if parent is None or getattr(parent, "kind", None) == ExpressionKind.NullLiteral:
+        return PATH_BASE_ABSOLUTE
+    return PATH_BASE_OWNER if _is_this(parent) else PATH_BASE_UNKNOWN
+
+
+def _is_this(expr: Any) -> bool:
+    """True for the expression ``this``."""
+    symbol = getattr(expr, "symbol", None)
+    return getattr(symbol, "name", None) == "this" or _expression_text(expr) == "this"
+
+
+def _class_key(symbol: Any) -> str:
+    """A class's qualified name, which is its key in a database.
+
+    A specialization (``fifo#(item)``) is keyed by its generic class, which is
+    what a database holds; a class in ``$unit`` by its bare name.
+    """
+    if symbol is None:
+        return ""
+    generic = getattr(symbol, "genericClass", None)
+    if generic is not None:
+        symbol = generic
+    path = getattr(symbol, "lexicalPath", "") or getattr(symbol, "name", "") or ""
+    return path.removeprefix("$unit::")
+
+
+def _path_loc(ref: Any) -> dict | None:
+    """A record ``loc`` naming the file by path (no database file table)."""
+    if ref is None or not getattr(ref, "is_valid", False):
+        return None
+    return {"file": ref.file, "line": ref.line, "col": max(ref.column, 0)}

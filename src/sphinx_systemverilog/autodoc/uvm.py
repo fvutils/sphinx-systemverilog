@@ -55,9 +55,19 @@ logger = logging.getLogger(__name__)
 #: Stated on every testbench view.  The single most important sentence in the
 #: feature: everything here is a claim about source, never about a run.
 UVM_SCOPE_NOTE = (
-    "Hierarchy as written in build_phase — not a simulation trace. "
+    "Hierarchy as written in build_phase and the methods it calls — not a "
+    "simulation trace. "
     "Factory overrides, config-driven counts and dynamically named "
     "components are reported as such rather than resolved."
+)
+
+#: The resolved tree's version. It does apply overrides, so the sentence that
+#: matters is which parts of a run it still cannot know.
+UVM_RESOLVED_SCOPE_NOTE = (
+    "Hierarchy as a run would build it from build_phase and the methods it "
+    "calls, with factory overrides applied as the IEEE 1800.2 factory applies "
+    "them — not a simulation trace. Conditions are not evaluated, a loop is "
+    "shown as one component, and config_db settings do not change the tree."
 )
 
 #: The same obligation, worded for a view that is about accesses rather than
@@ -186,6 +196,7 @@ class SvUvmTree(_UvmDirective):
     option_spec = {
         "depth": directives.nonnegative_int,
         "collapse": directives.flag,
+        "resolved": directives.flag,
         "optional": directives.flag,
     }
 
@@ -196,6 +207,8 @@ class SvUvmTree(_UvmDirective):
         env = self.state.document.settings.env
 
         depth = self.options.get("depth", env.config.sv_uvm_tree_depth)
+        if "resolved" in self.options:
+            return self._run_resolved(structure, depth)
 
         block = nodes.literal_block(_TREE_RAWSOURCE, classes=["sv-uvm-tree"])
         block += _type_ref(structure.root)
@@ -214,6 +227,124 @@ class SvUvmTree(_UvmDirective):
         )
 
         return [block] + self._notes(structure, state, depth, overrides)
+
+    # -- :resolved: ------------------------------------------------------------
+
+    def _run_resolved(self, structure, depth: int) -> list[nodes.Node]:
+        """The stitched tree (``svdb uvm-tree``): instances, with the types the
+        factory builds. Siblings are never folded --- an inst override can make
+        two same-typed siblings build different subtrees."""
+        env = self.state.document.settings.env
+        try:
+            tree = self._provider().uvm_tree(self._requested_root())
+        except Exception as e:  # noqa: BLE001 - a page must still build
+            logger.warning(
+                "sphinx-systemverilog: UVM tree cannot apply the factory "
+                "overrides (%s); showing the tree as written", e,
+                type="systemverilog", location=(env.docname, self.lineno),
+            )
+            self.options.pop("resolved", None)
+            return self.run()
+        if tree.root is None:
+            return []
+
+        by_path = tree._by_path()
+        block = nodes.literal_block(_TREE_RAWSOURCE, classes=["sv-uvm-tree", "sv-uvm-resolved"])
+        block += nodes.Text(f"{tree.root.name} : ")
+        _append_resolved_type(block, tree.root)
+        block += nodes.Text("\n")
+        state = _ResolvedState()
+        self._render_resolved(block, by_path, tree.root, "", depth, 1, state)
+        return [block] + self._resolved_notes(structure, tree, state, depth)
+
+    def _render_resolved(self, block, by_path, node, prefix: str, depth: int,
+                         level: int, state: "_ResolvedState") -> None:
+        children = [by_path[p] for p in node.children if p in by_path]
+        if not children:
+            return
+        if level > depth:
+            state.elide(by_path, children, 1)
+            return
+        width = max(len(c.name) for c in children)
+        for position, child in enumerate(children):
+            last = position == len(children) - 1
+            block += nodes.Text(prefix + (_ELBOW if last else _TEE) + f"{child.name.ljust(width)} : ")
+            _append_resolved_type(block, child)
+            if child.multiplicity != "1":
+                block += nodes.Text(f"   (×{child.multiplicity})")
+            if child.conditional:
+                block += nodes.Text("  [conditional]")
+            if child.state != STATE_OK:
+                block += nodes.Text(f"  [{child.state}]")
+            block += nodes.Text("\n")
+            state.count(child)
+            self._render_resolved(block, by_path, child, prefix + (_BLANK if last else _PIPE),
+                                  depth, level + 1, state)
+
+    def _resolved_notes(self, structure, tree, state: "_ResolvedState",
+                        depth: int) -> list[nodes.Node]:
+        out: list[nodes.Node] = []
+        if state.overridden:
+            out.append(self._note(
+                f"{state.overridden} component(s) above are built as a different "
+                "type than their create call names, shown as declared → built. "
+                "Overrides are applied in the order build_phase registers them, "
+                "children built in name order, as a run applies them."
+            ))
+        unknown = [o for o in tree.overrides if o.status == "unknown_type"]
+        if unknown:
+            names = ", ".join(sorted({o.replacement.rsplit("::", 1)[-1] for o in unknown}))
+            out.append(self._note(
+                f"{len(unknown)} factory override(s) name a type that is not in "
+                f"the parsed sources ({names}) and never apply.",
+                extra_class="sv-uvm-unresolved",
+            ))
+        issues = [i for i in tree.issues if i.code != "max_nodes"]
+        if issues:
+            para = self._note(f"{len(issues)} issue(s) found while building the tree:")
+            items = nodes.bullet_list(classes=["sv-uvm-issues"])
+            for i in issues:
+                item = nodes.list_item()
+                text = nodes.paragraph()
+                text += nodes.literal(i.code, i.code)
+                text += nodes.Text(f": {i.message}" + (f" ({i.path})" if i.path else ""))
+                item += text
+                items += item
+            out += [para, items]
+        if tree.truncated:
+            out.append(self._note(
+                f"The tree was cut short after {len(tree.nodes)} component(s); "
+                "this view is incomplete."
+            ))
+        if state.elided_levels:
+            out.append(self._note(
+                f"{state.elided_levels} deeper level(s) containing "
+                f"{state.elided_components} component(s) not shown — raise "
+                f":depth: (currently {depth})."
+            ))
+        if state.unresolved:
+            names = ", ".join(sorted({n.type.rsplit("::", 1)[-1] for n in state.unresolved}))
+            out.append(self._note(
+                f"{len(state.unresolved)} component(s) could not be resolved "
+                f"({names}). Their types are not present in the parsed sources, "
+                "so nothing below them is known.",
+                extra_class="sv-uvm-unresolved",
+            ))
+        if state.opaque:
+            out.append(self._note(
+                f"{len(state.opaque)} component(s) shown as boundaries and not "
+                "expanded (sv_uvm_blackbox / sv_uvm_blackbox_bases, plus UVM "
+                "library types)."
+            ))
+        if len(structure.root_candidates) > 1:
+            others = ", ".join(n for n in structure.root_candidates if n != structure.root)
+            out.append(self._note(
+                f"This project contains more than one test; showing "
+                f"{structure.root}. Others: {others}. Name one as the directive "
+                "argument to choose."
+            ))
+        out.append(self._note(UVM_RESOLVED_SCOPE_NOTE))
+        return out
 
     # -- rendering ------------------------------------------------------------
 
@@ -365,6 +496,39 @@ class _RenderState:
                         (grandchildren, level + 1, path + (child.type_name,))
                     )
         self.elided_levels = max(self.elided_levels, deepest)
+
+
+class _ResolvedState:
+    """What the resolved tree must report but cannot show inline."""
+
+    def __init__(self) -> None:
+        self.unresolved: list[Any] = []
+        self.opaque: list[Any] = []
+        self.overridden = 0
+        self.elided_levels = 0
+        self.elided_components = 0
+
+    def count(self, node) -> None:
+        if node.state == STATE_UNRESOLVED:
+            self.unresolved.append(node)
+        elif node.state == STATE_OPAQUE:
+            self.opaque.append(node)
+        if node.declared and node.declared != node.type:
+            self.overridden += 1
+
+    def elide(self, by_path, children, level: int) -> None:
+        for child in children:
+            self.elided_components += 1
+            self.elided_levels = max(self.elided_levels, level)
+            self.elide(by_path, [by_path[p] for p in child.children if p in by_path], level + 1)
+
+
+def _append_resolved_type(block: nodes.Element, node) -> None:
+    """``declared → built`` when an override changed the type, else ``built``."""
+    if node.declared and node.declared != node.type:
+        block += _type_ref(node.declared.rsplit("::", 1)[-1])
+        block += nodes.Text(" → ")
+    block += _type_ref(node.type.rsplit("::", 1)[-1])
 
 
 # -- line rendering -----------------------------------------------------------

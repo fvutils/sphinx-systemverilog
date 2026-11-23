@@ -106,17 +106,28 @@ traffic, factory overrides, virtual-interface bindings and sequence bodies.
 The directives read them from the database, so a page built from a warm cache
 does not parse anything. Every record's `r` starts with `uvm.`; each one
 carries one of the testbench views field for field. Type names are references
-(`{"name": "my_env"}`), source positions are locations (`{"file", "line",
-"col"}`), and a field at its default value is left out.
+(`{"name": "my_env", "target": "my_pkg::my_env"}`: the name as written, and
+the class's qualified name when it resolved), source positions are locations
+(`{"file", "line", "col"}`), and a field at its default value is left out.
+
+The component records (`uvm.type`, `uvm.child`, `uvm.conn`) describe each
+component class **on its own**: what that class itself writes, in every
+function it defines, and nothing inherited. A class that no test reaches is
+recorded too. The tree a directive draws is worked out from them when the
+database is read, by following each class's `build_phase` (and constructor),
+its base's when it has none, `super` calls and the helper functions it calls,
+in the order they run. To make that possible each create, connection, override
+and helper call records the function it is in (`method`) and its position
+among that function's calls (`step`).
 
 | `r` | One per | Main fields |
 |---|---|---|
 | `uvm.root` | testbench (one record) | `root`, `root_origin` (`run_test`, `config`, `directive`), `root_candidates`, `component_count`, `truncated` |
-| `uvm.type` | component type in the tree | `type`, `tier` (`test`, `env`, `agent`, `driver`, ...), `chain` (base classes up to `uvm_void`), `ports` (TLM ports and exports: `name`, `type`, `link`, `declared_by`) |
-| `uvm.child` | creation site in a `build_phase` | `owner` (the type that builds it), `inst_name`, `handle`, `type` |
-| `uvm.conn` | `connect()` or handle assignment in a `connect_phase` | `owner`, `kind`, `source` and `target` (`path`, `port`, `type`, `component`) |
+| `uvm.type` | component class | `type`, `base` (the immediate base class), `tier` (`test`, `env`, `agent`, `driver`, ...), `chain` (base classes up to `uvm_void`), `abstract`, `ports` (TLM ports and exports: `name`, `type`, `link`, `declared_by`), `methods` (every function the class defines, by name: `virtual`, and `calls`, the calls to the class's own or its bases' functions, each with `step`, `method`, `super`, `conditional`, `multiplicity`) |
+| `uvm.child` | creation site in a function of the class | `owner` (the class that writes it), `inst_name`, `handle`, `type`, `method` (left out for `build_phase`), `step`, `conditional`, `multiplicity` |
+| `uvm.conn` | `connect()` or handle assignment in a function of the class other than its constructor | `owner`, `kind`, `source` and `target` (`path`, `port`, `type`, `component`), `method` (left out for `connect_phase`), `step` |
 | `uvm.config` | `uvm_config_db` `set` or `get` | `id` (referred to by `uvm.binding`), `owner`, `method`, `action`, `cntxt`, `scope`, `field`, `type`, `value`, `virtual_interface` |
-| `uvm.override` | factory override | `owner`, `method`, `original`, `replacement` |
+| `uvm.override` | factory override | `owner`, `method`, `step`, `kind` (`type`, `inst`), `original`, `replacement`, `inst_path`, `path_base` (what `inst_path` is relative to: `owner`, `absolute` or `unknown`), `replace` (written only when `false`) |
 | `uvm.binding` | virtual interface handed to the testbench | `interface_type`, `field`, `instance_path`, `set` and `consumers` (`uvm.config` ids), `drivers` (`path`, `port`, `type`) |
 | `uvm.sequence` | sequence class | `type`, `chain`, `declared_by`, `overridden`, `body` (the sequence's activity as a nested list of nodes with `kind`: `item`, `sequence`, `fork`, `branch`, `loop`, `decision`, `delay`, `action`) |
 
@@ -129,13 +140,16 @@ For example, from a small testbench:
 {"r": "uvm.binding", "interface_type": {"name": "bridge_if"}, "field": "vif", "instance_path": "bridge_tb_top.u_bus", "set": "c4", "consumers": ["c1", "c3"], "drivers": [{"path": "bridge_tb_top.u_dut", "port": "bus", "type": {"name": "bridge_dut"}}]}
 ```
 
-Some answers are worked out when the database is read rather than stored:
-which `get` each `set` reaches, which types build a given component, and
-where a type is used. They are derived from the records above, so they can
+Some answers are worked out when the database is read rather than stored: the
+component tree, which `get` each `set` reaches, which types build a given
+component, and where a type is used. They are derived from the records above, so they can
 never disagree with them.
 
-The records describe one testbench: the one `run_test("...")` names, or the
-one `sv_uvm_root` (`svdb build --uvm-root`) chooses. `svdb export` writes them
+`uvm.root` names the default testbench: the one `run_test("...")` names, or
+the one `sv_uvm_root` (`svdb build --uvm-root`) chooses. The component records
+cover every component class, so a tree can be worked out from any of them:
+`svdb uvm-tree` does that with factory overrides applied, across several
+databases ([Exporting the UVM component tree](uvm-tree-export.md)). `svdb export` writes them
 after the design records; select them with `svdb sql`, or with
 `grep '"r":"uvm\.'` on the exported NDJSON.
 

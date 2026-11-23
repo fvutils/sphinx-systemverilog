@@ -172,3 +172,23 @@ def test_the_override_scan_does_not_elaborate_the_hierarchy():
     fresh.overrides()
 
     assert fresh.walk_count == 0
+
+
+# -- ordering and path bases (stitching plan A2) ---------------------------------
+
+
+def test_every_form_is_numbered_in_call_order(overrides):
+    steps = [o.step for o in overrides.overrides if o.owner == "ovr_test"]
+    assert None not in steps
+    assert steps == sorted(steps)
+
+
+def test_only_inst_overrides_have_a_path_base(overrides):
+    from sphinx_systemverilog.model.uvm import PATH_BASE_OWNER
+
+    for o in overrides.overrides:
+        assert o.path_base == (PATH_BASE_OWNER if o.kind == OVERRIDE_INST else "")
+
+
+def test_replace_defaults_to_true(overrides):
+    assert all(o.replace for o in overrides.overrides)

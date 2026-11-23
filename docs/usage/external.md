@@ -156,6 +156,13 @@ then `svdb import` it. If the VIP's documentation also publishes a Sphinx
 inventory, `sphinx.ext.intersphinx` gives exact links to its pages and the
 database adds the ports.
 
+A VIP's database also describes its UVM classes, each on its own, so
+`svdb uvm-tree -d tb.svdb -d axi_vip.svdb` expands the VIP's agents inside the
+testbench's tree, with the testbench's factory overrides applied inside them.
+Classes are matched by qualified name; one that two databases describe
+differently is taken from the first and reported
+([Several databases](uvm-tree-several)).
+
 ## URL templates: `sv_external_docs`
 
 For a component with documentation but no database, map name patterns to URL

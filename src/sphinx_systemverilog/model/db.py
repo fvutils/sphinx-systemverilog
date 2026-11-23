@@ -389,6 +389,14 @@ class _UvmView:
         views = self._views()
         return views.bridge if views is not None and views.bridge is not None else self._live().bridge()
 
+    def uvm_tree(self, root: str = ""):
+        """The stitched tree from the database's per-class records, or from
+        the live provider when the database holds none."""
+        views = self._views()
+        if views is not None and views.classes is not None:
+            return self._index._database().uvm_tree(root or None)
+        return self._live().uvm_tree(root)
+
     def knows(self, name: str) -> bool:
         if self._views() is None:
             return self._live().knows(name)

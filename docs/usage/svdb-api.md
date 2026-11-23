@@ -46,6 +46,37 @@ svdb export design.svdb -o design.ndjson
    :member-order: bysource
 ```
 
+## The UVM component tree
+
+`Database.uvm_tree()` stitches the UVM component tree from the per-class
+records of every database opened, with factory overrides applied
+([Exporting the UVM component tree](uvm-tree-export.md) describes the rules and
+the JSON):
+
+```python
+import json
+
+with svdb.Database.open(["tb.svdb", "vip.svdb"]) as db:
+    tree = db.uvm_tree()                       # or uvm_tree("tb_pkg::my_test")
+for node in tree.nodes:                        # build order
+    if node.declared != node.type:
+        print(node.path, node.declared, "->", node.type, [v.owner for v in node.via])
+for link in tree.links:
+    print(f"{link.source.path}.{link.source.port} -> {link.target.path}.{link.target.port}")
+print(json.dumps(tree.to_json()))
+```
+
+```{eval-rst}
+.. automodule:: sphinx_systemverilog.svdb.uvm_tree
+   :members: stitch, UvmTree, UvmNode, UvmLink, UvmLinkEnd, UvmVia, UvmTreePort, UvmTreeOverride,
+             UvmTreeIssue, render_text, render_dot
+   :member-order: bysource
+
+.. automodule:: sphinx_systemverilog.svdb.uvm_inline
+   :members: run, walk, RunItem, RunIssue
+   :member-order: bysource
+```
+
 ## Writing and importing
 
 ```{eval-rst}

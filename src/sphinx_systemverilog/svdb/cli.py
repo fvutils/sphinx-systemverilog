@@ -11,6 +11,7 @@
     svdb query -d design.svdb get axi_pkg::axi_item
     svdb query -d tb.svdb -d vip.svdb derived uvm_pkg::uvm_component --transitive
     svdb sql design.svdb "SELECT kind, count(*) FROM object GROUP BY kind"
+    svdb uvm-tree -d tb.svdb -d vip.svdb --root my_test --format text
 """
 
 from __future__ import annotations
@@ -204,6 +205,30 @@ def cmd_sql(args) -> int:
     return 0
 
 
+def cmd_uvm_tree(args) -> int:
+    from .uvm_tree import render_dot, render_text
+
+    with Database.open(args.db) as db:
+        try:
+            tree = db.uvm_tree(args.root, name=args.name, include_conditional=not args.no_conditional,
+                               max_nodes=args.max_nodes)
+        except LookupError as e:
+            print(f"svdb: {e.args[0] if e.args else e}", file=sys.stderr)
+            return 1
+    if args.format == "text":
+        text = render_text(tree)
+    elif args.format == "dot":
+        text = render_dot(tree)
+    else:
+        text = tree.dumps(nested=args.format == "nested") + "\n"
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="svdb", description="SystemVerilog design database tool.")
     sub = p.add_subparsers(dest="command", required=True)
@@ -258,6 +283,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("query")
     s.add_argument("params", nargs="*")
     s.set_defaults(func=cmd_sql)
+
+    s = sub.add_parser("uvm-tree", help="the UVM component tree, with factory overrides applied and connections")
+    s.add_argument("-d", "--db", action="append", required=True, help="database file (repeat to stitch several)")
+    s.add_argument("--root", help="root test class (default: the database's uvm.root)")
+    s.add_argument("--name", default="uvm_test_top", help="the root's instance name (default: uvm_test_top)")
+    s.add_argument("--format", choices=["json", "nested", "text", "dot"], default="json",
+                   help="json (flat, default), nested JSON, an indented text tree, or Graphviz dot")
+    s.add_argument("--no-conditional", action="store_true",
+                   help="leave out components and connections that sit under an if")
+    s.add_argument("--max-nodes", type=int, default=5000, help="stop after this many components (default 5000)")
+    s.add_argument("-o", "--output", help="file to write (default: stdout)")
+    s.set_defaults(func=cmd_uvm_tree)
     return p
 
 

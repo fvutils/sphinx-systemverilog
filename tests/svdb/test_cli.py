@@ -117,3 +117,47 @@ def test_cli_help(capsys):
         main(["--help"])
     assert e.value.code == 0
     assert "import" in capsys.readouterr().out
+
+
+# -- uvm-tree --------------------------------------------------------------------
+
+
+@pytest.fixture
+def uvm_db(tmp_path):
+    src = tmp_path / "uvm.ndjson"
+    src.write_text(svdb.example_text("uvm.ndjson"))
+    db = tmp_path / "uvm.svdb"
+    assert main(["import", str(src), "-o", str(db)]) == 0
+    return db
+
+
+def test_cli_uvm_tree_json(uvm_db, capsys):
+    assert main(["uvm-tree", "-d", str(uvm_db)]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["format"] == "svdb-uvm-tree"
+    assert data["root"] == {"name": "uvm_test_top", "type": "my_pkg::my_test"}
+    assert {n["path"] for n in data["nodes"]} >= {"uvm_test_top", "uvm_test_top.env"}
+
+
+def test_cli_uvm_tree_formats(uvm_db, capsys):
+    assert main(["uvm-tree", "-d", str(uvm_db), "--format", "nested"]) == 0
+    (root,) = json.loads(capsys.readouterr().out)["nodes"]
+    assert root["children"][0]["name"] == "env"
+    assert main(["uvm-tree", "-d", str(uvm_db), "--format", "text"]) == 0
+    assert capsys.readouterr().out.startswith("uvm_test_top : my_test")
+    assert main(["uvm-tree", "-d", str(uvm_db), "--format", "dot"]) == 0
+    assert capsys.readouterr().out.startswith("digraph uvm {")
+
+
+def test_cli_uvm_tree_options(uvm_db, tmp_path, capsys):
+    out = tmp_path / "tree.json"
+    assert main(["uvm-tree", "-d", str(uvm_db), "--root", "my_env", "--name", "top", "-o", str(out)]) == 0
+    data = json.loads(out.read_text())
+    assert data["root"] == {"name": "top", "type": "my_pkg::my_env"}
+    assert main(["uvm-tree", "-d", str(uvm_db), "--no-conditional", "--format", "text"]) == 0
+    assert "sb :" not in capsys.readouterr().out
+
+
+def test_cli_uvm_tree_missing_root(uvm_db, capsys):
+    assert main(["uvm-tree", "-d", str(uvm_db), "--root", "no_such_test"]) == 1
+    assert "no_such_test" in capsys.readouterr().err

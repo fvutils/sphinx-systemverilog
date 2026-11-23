@@ -19,7 +19,7 @@ from sphinx_systemverilog.svdb.validate import validate
 from tests.conftest import UVM_STUB, UVM_TB
 
 HERE = Path(__file__).parent
-CASES = ["basic_tb", "tlm_tb", "config_tb", "override_tb", "bridge_tb", "seq_tb"]
+CASES = ["basic_tb", "tlm_tb", "config_tb", "override_tb", "bridge_tb", "seq_tb", "stitch_tb"]
 
 
 def _records(tb: str) -> list[dict]:
@@ -73,6 +73,10 @@ MORE_CASES = [
     (("blackbox_tb",), {"uvm_blackbox": ["acme_vip_*"]}),
     (("blackbox_tb",), {"uvm_blackbox": [], "uvm_blackbox_bases": []}),
     (("config_tb",), {"doc_style": "native"}),
+    (("dup_names_tb",), {}),
+    (("stitch_tb",), {"uvm_root": "helper_test"}),
+    (("stitch_tb",), {"uvm_root": "inherit_test"}),
+    (("basic_tb",), {"uvm_max_components": 3}),
 ]
 
 
@@ -104,6 +108,7 @@ def _assert_round_trip(tbs, **kw):
     finally:
         w.conn.close()
     assert got.structure == live.structure
+    assert got.classes == live.classes
     assert got.config == live.config
     assert got.overrides == live.overrides
     assert got.bridge == live.bridge

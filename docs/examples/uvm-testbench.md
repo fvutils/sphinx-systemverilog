@@ -410,6 +410,26 @@ the registry form names the type it replaces *nowhere in its arguments*, and
 UVM's two inst forms take the path at opposite ends of their argument lists. See
 [Factory overrides](uvm-overrides).
 
+### The same tree, resolved
+
+```rst
+.. sv:uvm-tree:: ovr_test
+   :resolved:
+```
+
+```{eval-rst}
+.. sv:uvm-tree:: ovr_test
+   :resolved:
+```
+
+With `:resolved:` the tree names what a run builds. `drv` is a `fast_driver`
+through the inst override on `env.agt.drv`: an inst override is looked up
+before a type override, so the type override to the same class never gets
+to apply. `mon` is a `noisy_monitor` through the registry form. The typo'd
+`noisy_moniter` override is still reported beneath the tree, because it
+never applies. What this view takes for granted to get there (every `if`
+taken, a loop as one component) is its last line.
+
 ### The other direction
 
 ```rst

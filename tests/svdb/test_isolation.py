@@ -17,6 +17,7 @@ def test_svdb_imports_neither_sphinx_nor_pyslang():
     code = (
         "import sys\n"
         "import sphinx_systemverilog.svdb.cli, sphinx_systemverilog.svdb.database\n"
+        "import sphinx_systemverilog.svdb.uvm_inline, sphinx_systemverilog.svdb.uvm_tree\n"
         "bad = sorted(m for m in sys.modules if m.split('.')[0] in ('sphinx', 'pyslang'))\n"
         "print(','.join(bad))\n"
     )

@@ -533,6 +533,19 @@ class Database:
         """The ``elab`` records of *definition* (one per parameter set)."""
         return [json.loads(rec) for _id, rec in self._rows(definition.source, "elaborations", (definition.id,))]
 
+    def uvm_tree(self, root: str | None = None, *, name: str = "uvm_test_top",
+                 include_conditional: bool = True, max_nodes: int = 5000):
+        """The UVM component tree a simulation would build from *root*.
+
+        *root* is a component class (qualified or bare name); ``None`` takes
+        the first ``uvm.root`` record.  Stitched from every source's per-class
+        records, following factory overrides as IEEE 1800.2's factory does
+        (:mod:`.uvm_tree`).  Raises :class:`LookupError` when there is no root.
+        """
+        from .uvm_tree import stitch
+
+        return stitch(self, root, name=name, include_conditional=include_conditional, max_nodes=max_nodes)
+
     def tree(self, top: Object, *, depth: int | None = None, cap: int = 5000) -> "TreeNode":
         """The elaborated instance tree rooted at *top* (plan §5.3, D3c-IMPL-2).
 

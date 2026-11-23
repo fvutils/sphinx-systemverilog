@@ -9,9 +9,20 @@ from the fields that are there.  Renamed on the way:
   ``type``;
 * a ``UvmBinding``'s ``set_access`` is ``set`` and its ``consumers`` are the
   ``id`` of the ``uvm.config`` records they are (``c1``, ``c2``, ... in
-  ``UvmConfig.accesses`` order).
+  ``UvmConfig.accesses`` order);
+* a ``UvmType``'s ``methods`` tuple is an object keyed by method name;
+* a ``UvmType``'s ``key`` and a ``UvmChild``'s ``type_key`` are the
+  ``target`` of its ``type`` Ref;
+* a ``UvmType``'s ``base`` is the ``target`` of a ``base`` Ref named
+  ``chain[1]``, and a ``UvmOverride``'s ``*_key`` the ``target`` of the
+  matching Ref.
 
 ``UvmConfigRow``, ``built_by`` and ``used_by`` are derived and not written.
+
+The ``uvm.type``, ``uvm.child`` and ``uvm.conn`` records are each class's own
+partial elaboration (:meth:`~..model.uvm.UvmProvider.classes`), not the root
+walk: the walk is derived, and :func:`rebuild` redoes it from them with the
+same rule (:func:`~..svdb.uvm_inline.walk`).  ``uvm.root`` says where it starts.
 """
 
 from __future__ import annotations
@@ -23,9 +34,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ..model.objects import SourceRef
-from ..model.uvm import (_LIBRARY_PREFIX, UvmActivity, UvmBinding, UvmBridge, UvmChild, UvmConfig,
-                         UvmConfigAccess, UvmConnection, UvmEndpoint, UvmInterfaceDriver, UvmOverride,
-                         UvmOverrides, UvmPort, UvmSequence, UvmStructure, UvmType)
+from ..model.uvm import (_LIBRARY_PREFIX, DEFAULT_MAX_COMPONENTS, MAX_DEPTH, STATE_OK, UvmActivity, UvmBinding, UvmBridge, UvmCall, UvmChild, UvmConfig,
+                         UvmConfigAccess, UvmConnection, UvmEndpoint, UvmInterfaceDriver, UvmMethod,
+                         UvmOverride, UvmOverrides, UvmPort, UvmSequence, UvmStructure, UvmType)
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +49,8 @@ class UvmViews:
     """What the UVM provider answers without an argument, plus every sequence."""
 
     structure: Any = None
+    #: Every component class's own records, keyed by qualified name.
+    classes: Any = None
     config: Any = None
     overrides: Any = None
     bridge: Any = None
@@ -46,7 +59,7 @@ class UvmViews:
     def sections(self) -> dict[str, str]:
         """Header ``sections`` for the views that were computed."""
         out = {}
-        for key, value in (("uvm.tree", self.structure), ("uvm.config", self.config),
+        for key, value in (("uvm.tree", self.structure or self.classes), ("uvm.config", self.config),
                            ("uvm.overrides", self.overrides), ("uvm.bindings", self.bridge)):
             if value is not None:
                 out[key] = "complete"
@@ -61,6 +74,7 @@ def views(provider: Any) -> UvmViews:
     A view that fails is ``None``: the directive that asks reports it.
     """
     out = UvmViews(structure=_quietly(provider.get, "UVM testbench"),
+                   classes=_quietly(provider.classes, "component classes"),
                    config=_quietly(provider.config, "config_db accesses"),
                    overrides=_quietly(provider.overrides, "factory overrides"),
                    bridge=_quietly(provider.bridge, "virtual-interface bindings"))
@@ -82,8 +96,11 @@ def _quietly(fn, what: str):
         return None
 
 
-def _ref(name: str | None) -> dict:
-    return {"name": name or "$unknown"}
+def _ref(name: str | None, target: str = "") -> dict:
+    out = {"name": name or "$unknown"}
+    if target:
+        out["target"] = target
+    return out
 
 
 def _fields(obj: Any, loc: LocFn, skip: tuple[str, ...] = ()) -> dict:
@@ -114,6 +131,14 @@ def _endpoint(e: UvmEndpoint, loc: LocFn) -> dict:
     return _fields(e, loc)
 
 
+def _method(m: UvmMethod, loc: LocFn) -> dict:
+    out = _fields(m, loc, skip=("name", "calls"))
+    if m.calls:
+        # `step` 0 is its dataclass default, and still always written
+        out["calls"] = [{"step": c.step, **_fields(c, loc, skip=("step",))} for c in m.calls]
+    return out
+
+
 def _activity(a: UvmActivity, loc: LocFn) -> dict:
     out = {"kind": a.kind, **_fields(a, loc, skip=("kind", "children"))}
     if a.children:
@@ -126,28 +151,36 @@ def records(v: UvmViews, loc: LocFn) -> list[dict]:
     out: list[dict] = []
     s = v.structure
     if s is not None and s.root:
-        rec: dict[str, Any] = {"r": "uvm.root", "root": _ref(s.root)}
+        rec: dict[str, Any] = {"r": "uvm.root", "root": _ref(s.root, s.root_key)}
         for name in ("root_origin", "component_count", "truncated"):
             if getattr(s, name):
                 rec[name] = getattr(s, name)
         if s.root_candidates:
             rec["root_candidates"] = list(s.root_candidates)
         out.append(rec)
-        for t in s.types.values():
-            rec = {"r": "uvm.type", "type": _ref(t.name), **_fields(t, loc, skip=("name", "ports"))}
+    c = v.classes
+    if c is not None:
+        for key in sorted(c.types):
+            t = c.types[key]
+            rec = {"r": "uvm.type", "type": _ref(t.name, t.key),
+                   **_fields(t, loc, skip=("name", "ports", "methods", "key", "base"))}
+            if t.base:
+                rec["base"] = _ref(t.chain[1] if len(t.chain) > 1 else t.base.rsplit("::", 1)[-1], t.base)
             if t.ports:
                 rec["ports"] = [{"name": p.name, **_fields(p, loc, skip=("name",))} for p in t.ports]
+            if t.methods:
+                rec["methods"] = {m.name: _method(m, loc) for m in t.methods}
             out.append(rec)
-        for owner, kids in s.children.items():
-            for c in kids:
-                out.append({"r": "uvm.child", "owner": _ref(owner), "handle": c.handle,
-                            "type": _ref(c.type_name), **_fields(c, loc, skip=("handle", "type_name"))})
-        for owner, conns in s.connections.items():
-            for c in conns:
-                rec = {"r": "uvm.conn", "owner": _ref(owner or c.owner),
-                       "source": _endpoint(c.source, loc), "target": _endpoint(c.target, loc),
-                       **_fields(c, loc, skip=("owner", "source", "target"))}
-                out.append(rec)
+        for key in sorted(c.types):
+            for k in c.children.get(key, ()):
+                out.append({"r": "uvm.child", "owner": _ref(c.types[key].name, key), "handle": k.handle,
+                            "type": _ref(k.type_name, k.type_key),
+                            **_fields(k, loc, skip=("handle", "type_name", "type_key"))})
+        for key in sorted(c.types):
+            for w in c.connections.get(key, ()):
+                out.append({"r": "uvm.conn", "owner": _ref(c.types[key].name, key),
+                            "source": _endpoint(w.source, loc), "target": _endpoint(w.target, loc),
+                            **_fields(w, loc, skip=("owner", "source", "target"))})
     ids: list[tuple[UvmConfigAccess, str]] = []
     if v.config is not None:
         for i, a in enumerate(v.config.accesses, 1):
@@ -159,10 +192,12 @@ def records(v: UvmViews, loc: LocFn) -> list[dict]:
             out.append(rec)
     if v.overrides is not None:
         for o in v.overrides.overrides:
-            rec = {"r": "uvm.override", "original": _ref(o.original), "replacement": _ref(o.replacement),
-                   **_fields(o, loc, skip=("original", "replacement", "owner"))}
+            rec = {"r": "uvm.override", "original": _ref(o.original, o.original_key),
+                   "replacement": _ref(o.replacement, o.replacement_key),
+                   **_fields(o, loc, skip=("original", "replacement", "owner", "original_key",
+                                           "replacement_key", "owner_key"))}
             if o.owner:
-                rec["owner"] = _ref(o.owner)
+                rec["owner"] = _ref(o.owner, o.owner_key)
             out.append(rec)
     if v.bridge is not None:
         def cid(access: UvmConfigAccess) -> str | None:
@@ -236,28 +271,26 @@ def rebuild(recs: list[dict], paths: dict[str, str], sections: dict[str, str]) -
         by_r.setdefault(rec["r"], []).append(rec)
     out = UvmViews()
     if "uvm.tree" in sections:
-        s = UvmStructure()
-        for rec in by_r.get("uvm.root", ())[:1]:
-            s.root = _name(rec["root"])
-            s.root_origin = rec.get("root_origin", "")
-            s.component_count = rec.get("component_count", 0)
-            s.truncated = rec.get("truncated", False)
-            s.root_candidates = tuple(rec.get("root_candidates", ()))
+        c = UvmStructure()
         for rec in by_r.get("uvm.type", ()):
             ports = tuple(build(UvmPort, p) for p in rec.get("ports", ()))
-            t = build(UvmType, rec, name=_name(rec["type"]), ports=ports)
-            s.types[t.name] = t
-            # the walk enters a type in all three dicts at once, empty lists too
-            s.children[t.name] = []
-            s.connections[t.name] = []
+            methods = tuple(
+                build(UvmMethod, m, name=name, calls=tuple(build(UvmCall, k) for k in m.get("calls", ())))
+                for name, m in rec.get("methods", {}).items())
+            t = build(UvmType, rec, name=_name(rec["type"]), ports=ports, methods=methods,
+                      key=_key(rec["type"]), base=(rec.get("base") or {}).get("target") or "")
+            c.types[t.key] = t
+            c.children[t.key] = []
+            c.connections[t.key] = []
         for rec in by_r.get("uvm.child", ()):
-            s.children.setdefault(_name(rec["owner"]), []).append(build(UvmChild, rec))
+            c.children.setdefault(_key(rec["owner"]), []).append(
+                build(UvmChild, rec, type_key=rec["type"].get("target") or ""))
         for rec in by_r.get("uvm.conn", ()):
-            owner = _name(rec["owner"])
-            s.connections.setdefault(owner, []).append(build(
-                UvmConnection, rec, owner=owner,
+            c.connections.setdefault(_key(rec["owner"]), []).append(build(
+                UvmConnection, rec, owner=_name(rec["owner"]),
                 source=build(UvmEndpoint, rec["source"]), target=build(UvmEndpoint, rec["target"])))
-        out.structure = s
+        out.classes = c
+        out.structure = _walk(c, by_r.get("uvm.root", ())[:1])
     accesses: dict[str, UvmConfigAccess] = {}
     if "uvm.config" in sections:
         out.config = UvmConfig()
@@ -270,7 +303,10 @@ def rebuild(recs: list[dict], paths: dict[str, str], sections: dict[str, str]) -
         for rec in by_r.get("uvm.override", ()):
             out.overrides.overrides.append(build(
                 UvmOverride, rec, original=_name(rec["original"]), replacement=_name(rec["replacement"]),
-                owner=_name(rec["owner"]) if "owner" in rec else ""))
+                original_key=rec["original"].get("target") or "",
+                replacement_key=rec["replacement"].get("target") or "",
+                owner=_name(rec["owner"]) if "owner" in rec else "",
+                owner_key=(rec.get("owner") or {}).get("target") or ""))
     if "uvm.bindings" in sections:
         out.bridge = UvmBridge()
         for rec in by_r.get("uvm.binding", ()):
@@ -287,3 +323,66 @@ def rebuild(recs: list[dict], paths: dict[str, str], sections: dict[str, str]) -
 def _name(ref: dict) -> str:
     name = ref.get("name", "")
     return "" if name == "$unknown" else name
+
+
+def _key(ref: dict) -> str:
+    """A Ref's target, or its name when the producer left it unresolved."""
+    return ref.get("target") or _name(ref)
+
+
+def _walk(classes: UvmStructure, roots: list[dict]) -> UvmStructure:
+    """The root walk, redone from per-class records (:func:`records`' inverse)."""
+    from ..svdb.uvm_inline import walk
+
+    s = UvmStructure()
+    for rec in roots:
+        s.root = _name(rec["root"])
+        s.root_key = rec["root"].get("target") or ""
+        s.root_origin = rec.get("root_origin", "")
+        s.component_count = rec.get("component_count", 0)
+        s.truncated = rec.get("truncated", False)
+        s.root_candidates = tuple(rec.get("root_candidates", ()))
+    key = s.root_key or next((k for k, t in classes.types.items() if t.name == s.root), "")
+    if key in classes.types:
+        # The same budget the producer stopped at, so a truncated tree is cut
+        # in the same place.
+        budget = s.component_count if s.truncated else max(s.component_count, DEFAULT_MAX_COMPONENTS)
+        found = walk(_RecordModel(classes), key, s.root, budget=budget, max_depth=MAX_DEPTH)
+        s.types, s.children, s.connections = found.types, found.children, found.connections
+    return s
+
+
+class _RecordModel:
+    """:class:`~..svdb.uvm_inline.WalkModel` over per-class records."""
+
+    def __init__(self, classes: UvmStructure) -> None:
+        self._c = classes
+
+    def type(self, key: str) -> UvmType | None:
+        return self._c.types.get(key)
+
+    def base(self, key: str) -> str | None:
+        t = self._c.types.get(key)
+        return t.base if t is not None and t.base else None
+
+    def items(self, key: str, method: str) -> list[Any]:
+        return ([k for k in self._c.children.get(key, ()) if k.method == method]
+                + [w for w in self._c.connections.get(key, ()) if w.method == method])
+
+    def describe(self, key: str, display: str) -> UvmType:
+        return dataclasses.replace(self._c.types[key], name=display)
+
+    def is_child(self, item: Any) -> bool:
+        return isinstance(item, UvmChild)
+
+    def child(self, reached: Any) -> tuple[UvmChild, str | None]:
+        k = reached.item
+        child = dataclasses.replace(k, conditional=reached.conditional, multiplicity=reached.multiplicity)
+        descend = k.state == STATE_OK and k.type_key in self._c.types
+        return child, k.type_key if descend else None
+
+    def connection(self, reached: Any, display: str) -> UvmConnection | None:
+        w = reached.item
+        if not isinstance(w, UvmConnection):
+            return None
+        return dataclasses.replace(w, owner=display, conditional=reached.conditional)

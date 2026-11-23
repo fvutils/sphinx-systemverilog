@@ -102,8 +102,11 @@ class Options:
         """What a build of these options depends on (the on-disk cache's
         digest input): :func:`~..model.index.index_key`, plus
         ``structure_gates`` -- excluded from :meth:`kwargs` but still part of
-        what the *records* a build produces depend on."""
-        return (*index_key(**self.kwargs()), self.structure_gates)
+        what the *records* a build produces depend on, and the extension's
+        version, so that an upgrade never reads records an older one cached."""
+        from ..__version__ import __version__
+
+        return (*index_key(**self.kwargs()), self.structure_gates, __version__)
 
     def inputs(self) -> dict[str, Any]:
         """``header.inputs``."""

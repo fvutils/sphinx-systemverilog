@@ -219,6 +219,12 @@ _INSTANCE = {
     "parent": "m", "pos": 0, "detail": {"of": {"name": "leaf", "target": "leaf"}},
 }
 _HEADER = {"r": "header", "format": "svdb", "schema": "1.0", "producer": {"name": "t"}}
+_UVM_TYPE = {"r": "uvm.type", "type": {"name": "env"}, "kind": "component",
+             "methods": {"build_phase": {"virtual": True, "calls": [{"step": 0, "method": "build_agents"}]}}}
+_UVM_CHILD = {"r": "uvm.child", "owner": {"name": "env"}, "handle": "a", "type": {"name": "agent"},
+              "method": "build_agents", "step": 0}
+_UVM_OVERRIDE = {"r": "uvm.override", "original": {"name": "a"}, "replacement": {"name": "b"},
+                 "kind": "inst", "inst_path": "env.*", "step": 2, "path_base": "owner"}
 
 
 def _with(base: dict, **changes) -> dict:
@@ -265,7 +271,38 @@ NEGATIVE = [
     ("bad section status", _with(_HEADER, sections={"docs": "most"}), "most"),
     ("unknown record type", {"r": "widget"}, "widget"),
     ("elab key not hex16", {"r": "elab", "def": "m", "key": "xyz"}, "xyz"),
+    ("uvm child negative step", _with(_UVM_CHILD, step=-1), "-1"),
+    ("uvm conn step not integer", {"r": "uvm.conn", "owner": {"name": "env"}, "source": {}, "target": {},
+                                   "step": "0"}, "'0'"),
+    ("uvm method call without step", _with(_UVM_TYPE, methods={"build_phase": {"calls": [{"method": "m"}]}}), "step"),
+    ("uvm method call negative step", _with(_UVM_TYPE, methods={"new": {"calls": [{"step": -2, "method": "m"}]}}),
+     "-2"),
+    ("uvm method unknown field", _with(_UVM_TYPE, methods={"new": {"args": []}}), "args"),
+    ("uvm abstract not boolean", _with(_UVM_TYPE, abstract="yes"), "yes"),
+    ("bad path_base", _with(_UVM_OVERRIDE, path_base="relative"), "relative"),
+    ("path_base on a type override", _with(_UVM_OVERRIDE, kind="type"), "inst"),
+    ("path_base without kind", _with(_UVM_OVERRIDE, kind=_DELETE), "kind"),
+    ("replace true is left out", _with(_UVM_OVERRIDE, kind="type", path_base=_DELETE, replace=True), "False"),
+    ("uvm override negative step", _with(_UVM_OVERRIDE, step=-1), "-1"),
 ]
+
+
+POSITIVE = [
+    ("uvm type with methods", _with(_UVM_TYPE, abstract=True)),
+    ("uvm type inheriting everything", _with(_UVM_TYPE, methods={})),
+    ("uvm child in a helper", _UVM_CHILD),
+    ("uvm inst override", _UVM_OVERRIDE),
+    ("uvm absolute inst override", _with(_UVM_OVERRIDE, path_base="absolute")),
+    ("uvm type override, no replace", _with(_UVM_OVERRIDE, kind="type", path_base=_DELETE, replace=False)),
+    ("uvm conn with method", {"r": "uvm.conn", "owner": {"name": "env"}, "source": {}, "target": {},
+                              "method": "connect_agents", "step": 4}),
+]
+
+
+@pytest.mark.parametrize("label,record", POSITIVE, ids=[n[0] for n in POSITIVE])
+def test_positive(validator, label, record):
+    errors = sorted(validator.iter_errors(record), key=lambda e: e.json_path)
+    assert not errors, f"{label}: " + "; ".join(f"{e.json_path}: {e.message}" for e in errors)
 
 
 @pytest.mark.parametrize("label,record,token", NEGATIVE, ids=[n[0] for n in NEGATIVE])

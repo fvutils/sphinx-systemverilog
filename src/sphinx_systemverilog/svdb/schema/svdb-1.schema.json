@@ -781,6 +781,30 @@
 
     "uvm_link": {"enum": ["analysis", "seq_item", "tlm", "handle"]},
     "uvm_state": {"enum": ["ok", "opaque", "unresolved"]},
+    "uvm_step": {"type": "integer", "minimum": 0,
+                 "description": "0-based position of a call in a syntax-order enumeration of the call expressions in its method's body. Shared by uvm.child, uvm.conn, uvm.override and methods.*.calls of the same method."},
+    "uvm_method": {
+      "type": "object", "additionalProperties": false,
+      "description": "A function the class itself defines.",
+      "properties": {
+        "virtual": {"type": "boolean"},
+        "calls": {
+          "type": "array",
+          "description": "Calls the stitcher can follow: unqualified, this. or super. calls to a function of this class or its bases.",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["step", "method"],
+            "properties": {
+              "step": {"$ref": "#/$defs/uvm_step"},
+              "method": {"type": "string"},
+              "super": {"type": "boolean", "description": "A super.m() call: bound from the base of the defining class."},
+              "conditional": {"type": "boolean"},
+              "multiplicity": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
     "rec_uvm_root": {
       "type": "object", "additionalProperties": false,
       "required": ["r", "root"],
@@ -800,6 +824,7 @@
         "r": {"const": "uvm.type"},
         "type": {"$ref": "#/$defs/Ref"},
         "chain": {"type": "array", "items": {"type": "string"}, "description": "Base chain, outermost first."},
+        "base": {"$ref": "#/$defs/Ref", "description": "The immediate base class; its target is the key the stitcher follows inherited methods to."},
         "kind": {"enum": ["component", "port"]},
         "tier": {"type": "string", "description": "sequencer, driver, monitor, agent, env, test, analysis, or empty."},
         "ports": {
@@ -816,6 +841,11 @@
             }
           }
         },
+        "methods": {
+          "type": "object", "additionalProperties": {"$ref": "#/$defs/uvm_method"},
+          "description": "Keyed by the name of every function this class itself defines; a missing key means it is inherited."
+        },
+        "abstract": {"type": "boolean", "description": "A virtual class: never a tree node, still a base whose records are merged."},
         "loc": {"$ref": "#/$defs/Loc"}
       }
     },
@@ -824,7 +854,9 @@
       "required": ["r", "owner", "handle", "type"],
       "properties": {
         "r": {"const": "uvm.child"},
-        "owner": {"$ref": "#/$defs/Ref", "description": "Type whose build_phase creates the child."},
+        "owner": {"$ref": "#/$defs/Ref", "description": "Type whose method creates the child."},
+        "method": {"type": "string", "description": "The method containing the create; build_phase when left out."},
+        "step": {"$ref": "#/$defs/uvm_step"},
         "handle": {"type": "string"},
         "inst_name": {"type": ["string", "null"]},
         "type": {"$ref": "#/$defs/Ref"},
@@ -855,6 +887,8 @@
         "source": {"$ref": "#/$defs/uvm_endpoint"},
         "target": {"$ref": "#/$defs/uvm_endpoint"},
         "kind": {"$ref": "#/$defs/uvm_link"},
+        "method": {"type": "string", "description": "The method containing the connect; connect_phase when left out."},
+        "step": {"$ref": "#/$defs/uvm_step"},
         "conditional": {"type": "boolean"},
         "loc": {"$ref": "#/$defs/Loc"}
       }
@@ -882,6 +916,7 @@
     "rec_uvm_override": {
       "type": "object", "additionalProperties": false,
       "required": ["r", "original", "replacement"],
+      "if": {"required": ["path_base"]}, "then": {"required": ["kind"], "properties": {"kind": {"const": "inst"}}},
       "properties": {
         "r": {"const": "uvm.override"},
         "original": {"$ref": "#/$defs/Ref"},
@@ -890,6 +925,10 @@
         "inst_path": {"type": ["string", "null"]},
         "owner": {"$ref": "#/$defs/Ref"},
         "method": {"type": "string"},
+        "step": {"$ref": "#/$defs/uvm_step"},
+        "replace": {"const": false, "description": "The call passed replace=0 (type overrides). Left out when true."},
+        "path_base": {"enum": ["owner", "absolute", "unknown"],
+                      "description": "What inst_path is relative to (inst overrides only): the calling component, the root, or not known."},
         "conditional": {"type": "boolean"},
         "unknown": {"type": "array", "items": {"type": "string"}},
         "loc": {"$ref": "#/$defs/Loc"}

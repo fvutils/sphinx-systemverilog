@@ -1,0 +1,882 @@
+{
+ "format": "svdb-uvm-tree",
+ "issues": [
+  {
+   "code": "override_ignored",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 294
+   },
+   "message": "stitch_tb_pkg::st_seqr -> stitch_tb_pkg::big_seqr passed replace=0 and stitch_tb_pkg::st_seqr is already overridden (to stitch_tb_pkg::top_seqr)",
+   "path": "uvm_test_top.a_cfg"
+  },
+  {
+   "code": "unplaced_override",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 308
+   },
+   "message": "stitch_tb_pkg::st_item -> stitch_tb_pkg::st_item in stitch_tb_pkg::st_cfg.apply_overrides is not reached from any build_phase or constructor in this tree"
+  },
+  {
+   "code": "unplaced_override",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 343
+   },
+   "message": "stitch_tb_pkg::st_scb -> stitch_tb_pkg::st_scb in stitch_tb_pkg::st_test.run_phase is not reached from any build_phase or constructor in this tree"
+  }
+ ],
+ "links": [
+  {
+   "conditional": true,
+   "kind": "seq_item",
+   "loc": {
+    "col": 9,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 153
+   },
+   "owner": "uvm_test_top.b_agent",
+   "source": {
+    "path": "uvm_test_top.b_agent.drv",
+    "port": "seq_item_port"
+   },
+   "target": {
+    "path": "uvm_test_top.b_agent.seqr",
+    "port": "seq_item_export"
+   }
+  },
+  {
+   "kind": "analysis",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 179
+   },
+   "owner": "uvm_test_top.env",
+   "source": {
+    "path": "uvm_test_top.env.agt_a.mon",
+    "port": "ap"
+   },
+   "target": {
+    "path": "uvm_test_top.env.scb",
+    "port": "exp"
+   }
+  },
+  {
+   "kind": "analysis",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 205
+   },
+   "owner": "uvm_test_top.env",
+   "source": {
+    "path": "uvm_test_top.env.agt_b.mon",
+    "port": "ap"
+   },
+   "target": {
+    "path": "uvm_test_top.env.scb",
+    "port": "exp"
+   }
+  },
+  {
+   "kind": "seq_item",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 206
+   },
+   "owner": "uvm_test_top.env",
+   "source": {
+    "path": "uvm_test_top.env.agt_b.drv",
+    "port": "seq_item_port"
+   },
+   "target": {
+    "path": "uvm_test_top.env.agt_b.seqr",
+    "port": "seq_item_export"
+   }
+  },
+  {
+   "conditional": true,
+   "kind": "seq_item",
+   "loc": {
+    "col": 9,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 153
+   },
+   "owner": "uvm_test_top.env.agt_a",
+   "source": {
+    "path": "uvm_test_top.env.agt_a.drv",
+    "port": "seq_item_port"
+   },
+   "target": {
+    "path": "uvm_test_top.env.agt_a.seqr",
+    "port": "seq_item_export"
+   }
+  },
+  {
+   "conditional": true,
+   "kind": "seq_item",
+   "loc": {
+    "col": 9,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 153
+   },
+   "owner": "uvm_test_top.env.agt_b",
+   "source": {
+    "path": "uvm_test_top.env.agt_b.drv",
+    "port": "seq_item_port"
+   },
+   "target": {
+    "path": "uvm_test_top.env.agt_b.seqr",
+    "port": "seq_item_export"
+   }
+  }
+ ],
+ "nodes": [
+  {
+   "name": "uvm_test_top",
+   "path": "uvm_test_top",
+   "tier": "test",
+   "type": "stitch_tb_pkg::st_test"
+  },
+  {
+   "handle": "a_cfg",
+   "loc": {
+    "col": 17,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 339
+   },
+   "name": "a_cfg",
+   "parent": "uvm_test_top",
+   "path": "uvm_test_top.a_cfg",
+   "type": "stitch_tb_pkg::a_cfg_comp"
+  },
+  {
+   "handle": "b_agent",
+   "loc": {
+    "col": 17,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 340
+   },
+   "name": "b_agent",
+   "parent": "uvm_test_top",
+   "path": "uvm_test_top.b_agent",
+   "tier": "agent",
+   "type": "stitch_tb_pkg::st_agent"
+  },
+  {
+   "conditional": true,
+   "declared": "stitch_tb_pkg::st_drv",
+   "handle": "drv",
+   "loc": {
+    "col": 16,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 147
+   },
+   "name": "drv",
+   "parent": "uvm_test_top.b_agent",
+   "path": "uvm_test_top.b_agent.drv",
+   "ports": [
+    {
+     "link": "seq_item",
+     "name": "seq_item_port",
+     "role": "port"
+    },
+    {
+     "link": "analysis",
+     "name": "rsp_port",
+     "role": "port"
+    }
+   ],
+   "tier": "driver",
+   "type": "stitch_tb_pkg::slow_drv",
+   "via": [
+    {
+     "kind": "inst",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 296
+     },
+     "owner": "uvm_test_top.a_cfg",
+     "replacement": "stitch_tb_pkg::slow_drv"
+    }
+   ]
+  },
+  {
+   "declared": "stitch_tb_pkg::st_mon",
+   "handle": "mon",
+   "loc": {
+    "col": 13,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 145
+   },
+   "name": "mon",
+   "parent": "uvm_test_top.b_agent",
+   "path": "uvm_test_top.b_agent.mon",
+   "ports": [
+    {
+     "link": "analysis",
+     "name": "ap",
+     "role": "port"
+    }
+   ],
+   "tier": "monitor",
+   "type": "stitch_tb_pkg::mon_c",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 335
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::mon_b"
+    },
+    {
+     "kind": "type",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 336
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::mon_c"
+    }
+   ]
+  },
+  {
+   "conditional": true,
+   "declared": "stitch_tb_pkg::st_seqr",
+   "handle": "seqr",
+   "loc": {
+    "col": 16,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 148
+   },
+   "name": "seqr",
+   "parent": "uvm_test_top.b_agent",
+   "path": "uvm_test_top.b_agent.seqr",
+   "ports": [
+    {
+     "link": "seq_item",
+     "name": "seq_item_export",
+     "role": "export"
+    }
+   ],
+   "tier": "sequencer",
+   "type": "stitch_tb_pkg::top_seqr",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 5,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 411
+     },
+     "owner": "st_tb_top",
+     "replacement": "stitch_tb_pkg::top_seqr"
+    }
+   ]
+  },
+  {
+   "handle": "env",
+   "loc": {
+    "col": 13,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 332
+   },
+   "name": "env",
+   "parent": "uvm_test_top",
+   "path": "uvm_test_top.env",
+   "tier": "env",
+   "type": "stitch_tb_pkg::sup_env"
+  },
+  {
+   "handle": "agt_a",
+   "loc": {
+    "col": 15,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 175
+   },
+   "name": "agt_a",
+   "parent": "uvm_test_top.env",
+   "path": "uvm_test_top.env.agt_a",
+   "tier": "agent",
+   "type": "stitch_tb_pkg::st_agent"
+  },
+  {
+   "conditional": true,
+   "declared": "stitch_tb_pkg::st_drv",
+   "handle": "drv",
+   "loc": {
+    "col": 16,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 147
+   },
+   "name": "drv",
+   "parent": "uvm_test_top.env.agt_a",
+   "path": "uvm_test_top.env.agt_a.drv",
+   "ports": [
+    {
+     "link": "seq_item",
+     "name": "seq_item_port",
+     "role": "port"
+    },
+    {
+     "link": "analysis",
+     "name": "rsp_port",
+     "role": "port"
+    }
+   ],
+   "tier": "driver",
+   "type": "stitch_tb_pkg::slow_drv",
+   "via": [
+    {
+     "kind": "inst",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 337
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::slow_drv"
+    }
+   ]
+  },
+  {
+   "declared": "stitch_tb_pkg::st_mon",
+   "handle": "mon",
+   "loc": {
+    "col": 13,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 145
+   },
+   "name": "mon",
+   "parent": "uvm_test_top.env.agt_a",
+   "path": "uvm_test_top.env.agt_a.mon",
+   "ports": [
+    {
+     "link": "analysis",
+     "name": "ap",
+     "role": "port"
+    }
+   ],
+   "tier": "monitor",
+   "type": "stitch_tb_pkg::mon_c",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 335
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::mon_b"
+    },
+    {
+     "kind": "type",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 336
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::mon_c"
+    }
+   ]
+  },
+  {
+   "conditional": true,
+   "declared": "stitch_tb_pkg::st_seqr",
+   "handle": "seqr",
+   "loc": {
+    "col": 16,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 148
+   },
+   "name": "seqr",
+   "parent": "uvm_test_top.env.agt_a",
+   "path": "uvm_test_top.env.agt_a.seqr",
+   "ports": [
+    {
+     "link": "seq_item",
+     "name": "seq_item_export",
+     "role": "export"
+    }
+   ],
+   "tier": "sequencer",
+   "type": "stitch_tb_pkg::top_seqr",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 5,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 411
+     },
+     "owner": "st_tb_top",
+     "replacement": "stitch_tb_pkg::top_seqr"
+    }
+   ]
+  },
+  {
+   "handle": "agt_b",
+   "loc": {
+    "col": 15,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 201
+   },
+   "name": "agt_b",
+   "parent": "uvm_test_top.env",
+   "path": "uvm_test_top.env.agt_b",
+   "tier": "agent",
+   "type": "stitch_tb_pkg::st_agent"
+  },
+  {
+   "conditional": true,
+   "declared": "stitch_tb_pkg::st_drv",
+   "handle": "drv",
+   "loc": {
+    "col": 16,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 147
+   },
+   "name": "drv",
+   "parent": "uvm_test_top.env.agt_b",
+   "path": "uvm_test_top.env.agt_b.drv",
+   "ports": [
+    {
+     "link": "seq_item",
+     "name": "seq_item_port",
+     "role": "port"
+    },
+    {
+     "link": "analysis",
+     "name": "rsp_port",
+     "role": "port"
+    }
+   ],
+   "tier": "driver",
+   "type": "stitch_tb_pkg::fast_drv",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 324
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::fast_drv"
+    }
+   ]
+  },
+  {
+   "declared": "stitch_tb_pkg::st_mon",
+   "handle": "mon",
+   "loc": {
+    "col": 13,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 145
+   },
+   "name": "mon",
+   "parent": "uvm_test_top.env.agt_b",
+   "path": "uvm_test_top.env.agt_b.mon",
+   "ports": [
+    {
+     "link": "analysis",
+     "name": "ap",
+     "role": "port"
+    }
+   ],
+   "tier": "monitor",
+   "type": "stitch_tb_pkg::mon_x",
+   "via": [
+    {
+     "kind": "inst",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 338
+     },
+     "owner": "uvm_test_top",
+     "replacement": "stitch_tb_pkg::mon_x"
+    }
+   ]
+  },
+  {
+   "conditional": true,
+   "declared": "stitch_tb_pkg::st_seqr",
+   "handle": "seqr",
+   "loc": {
+    "col": 16,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 148
+   },
+   "name": "seqr",
+   "parent": "uvm_test_top.env.agt_b",
+   "path": "uvm_test_top.env.agt_b.seqr",
+   "ports": [
+    {
+     "link": "seq_item",
+     "name": "seq_item_export",
+     "role": "export"
+    }
+   ],
+   "tier": "sequencer",
+   "type": "stitch_tb_pkg::top_seqr",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 5,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 411
+     },
+     "owner": "st_tb_top",
+     "replacement": "stitch_tb_pkg::top_seqr"
+    }
+   ]
+  },
+  {
+   "declared": "stitch_tb_pkg::st_scb",
+   "handle": "scb",
+   "loc": {
+    "col": 15,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 176
+   },
+   "name": "scb",
+   "parent": "uvm_test_top.env",
+   "path": "uvm_test_top.env.scb",
+   "ports": [
+    {
+     "link": "analysis",
+     "name": "exp",
+     "role": "imp"
+    }
+   ],
+   "tier": "analysis",
+   "type": "stitch_tb_pkg::big_scb",
+   "via": [
+    {
+     "kind": "type",
+     "loc": {
+      "col": 7,
+      "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+      "line": 197
+     },
+     "owner": "uvm_test_top.env",
+     "replacement": "stitch_tb_pkg::big_scb"
+    }
+   ]
+  }
+ ],
+ "overrides": [
+  {
+   "applied_to": [
+    "uvm_test_top.env.scb"
+   ],
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 197
+   },
+   "method": "new",
+   "original": "stitch_tb_pkg::st_scb",
+   "owner": "stitch_tb_pkg::sup_env",
+   "registered_by": [
+    "uvm_test_top.env"
+   ],
+   "replacement": "stitch_tb_pkg::big_scb",
+   "status": "applied"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 294
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::st_seqr",
+   "owner": "stitch_tb_pkg::a_cfg_comp",
+   "registered_by": [
+    "uvm_test_top.a_cfg"
+   ],
+   "replace": false,
+   "replacement": "stitch_tb_pkg::big_seqr",
+   "status": "unused"
+  },
+  {
+   "inst_path": "b_agent.mon",
+   "kind": "inst",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 295
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::st_mon",
+   "owner": "stitch_tb_pkg::a_cfg_comp",
+   "path_base": "owner",
+   "registered_by": [
+    "uvm_test_top.a_cfg"
+   ],
+   "replacement": "stitch_tb_pkg::mon_x",
+   "status": "unused"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.b_agent.drv"
+   ],
+   "inst_path": "uvm_test_top.b_agent.drv",
+   "kind": "inst",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 296
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::st_drv",
+   "owner": "stitch_tb_pkg::a_cfg_comp",
+   "path_base": "absolute",
+   "registered_by": [
+    "uvm_test_top.a_cfg"
+   ],
+   "replacement": "stitch_tb_pkg::slow_drv",
+   "status": "applied"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 308
+   },
+   "method": "apply_overrides",
+   "original": "stitch_tb_pkg::st_item",
+   "owner": "stitch_tb_pkg::st_cfg",
+   "replacement": "stitch_tb_pkg::st_item",
+   "status": "unplaced"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.env.agt_b.drv"
+   ],
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 324
+   },
+   "method": "set_overrides",
+   "original": "stitch_tb_pkg::st_drv",
+   "owner": "stitch_tb_pkg::st_test",
+   "registered_by": [
+    "uvm_test_top"
+   ],
+   "replacement": "stitch_tb_pkg::fast_drv",
+   "status": "applied"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 334
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::sup_env",
+   "owner": "stitch_tb_pkg::st_test",
+   "registered_by": [
+    "uvm_test_top"
+   ],
+   "replacement": "stitch_tb_pkg::sup_env2",
+   "status": "unused"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.b_agent.mon",
+    "uvm_test_top.env.agt_a.mon"
+   ],
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 335
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::st_mon",
+   "owner": "stitch_tb_pkg::st_test",
+   "registered_by": [
+    "uvm_test_top"
+   ],
+   "replacement": "stitch_tb_pkg::mon_b",
+   "status": "applied"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.b_agent.mon",
+    "uvm_test_top.env.agt_a.mon"
+   ],
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 336
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::mon_b",
+   "owner": "stitch_tb_pkg::st_test",
+   "registered_by": [
+    "uvm_test_top"
+   ],
+   "replacement": "stitch_tb_pkg::mon_c",
+   "status": "applied"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.env.agt_a.drv"
+   ],
+   "inst_path": "env.agt_a.*",
+   "kind": "inst",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 337
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::st_drv",
+   "owner": "stitch_tb_pkg::st_test",
+   "path_base": "owner",
+   "registered_by": [
+    "uvm_test_top"
+   ],
+   "replacement": "stitch_tb_pkg::slow_drv",
+   "status": "applied"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.env.agt_b.mon"
+   ],
+   "inst_path": "uvm_test_top.env.agt_b.mon",
+   "kind": "inst",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 338
+   },
+   "method": "build_phase",
+   "original": "stitch_tb_pkg::st_mon",
+   "owner": "stitch_tb_pkg::st_test",
+   "path_base": "absolute",
+   "registered_by": [
+    "uvm_test_top"
+   ],
+   "replacement": "stitch_tb_pkg::mon_x",
+   "status": "applied"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 343
+   },
+   "method": "run_phase",
+   "original": "stitch_tb_pkg::st_scb",
+   "owner": "stitch_tb_pkg::st_test",
+   "replacement": "stitch_tb_pkg::st_scb",
+   "status": "unplaced"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 354
+   },
+   "method": "set_overrides",
+   "original": "stitch_tb_pkg::st_agent",
+   "owner": "stitch_tb_pkg::derived_test",
+   "replacement": "stitch_tb_pkg::big_agent",
+   "status": "unplaced"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 365
+   },
+   "method": "set_overrides",
+   "original": "stitch_tb_pkg::sup_env",
+   "owner": "stitch_tb_pkg::late_test",
+   "replacement": "stitch_tb_pkg::sup_env2",
+   "status": "unplaced"
+  },
+  {
+   "kind": "type",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 366
+   },
+   "method": "set_overrides",
+   "original": "stitch_tb_pkg::st_drv",
+   "owner": "stitch_tb_pkg::late_test",
+   "replacement": "stitch_tb_pkg::fast_drv",
+   "status": "unplaced"
+  },
+  {
+   "inst_path": "env.agt_b.mon",
+   "kind": "inst",
+   "loc": {
+    "col": 7,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 367
+   },
+   "method": "set_overrides",
+   "original": "stitch_tb_pkg::st_mon",
+   "owner": "stitch_tb_pkg::late_test",
+   "path_base": "owner",
+   "replacement": "stitch_tb_pkg::mon_c",
+   "status": "unplaced"
+  },
+  {
+   "applied_to": [
+    "uvm_test_top.b_agent.seqr",
+    "uvm_test_top.env.agt_a.seqr",
+    "uvm_test_top.env.agt_b.seqr"
+   ],
+   "kind": "type",
+   "loc": {
+    "col": 5,
+    "file": "tests/fixtures/uvm_tb/stitch_tb.sv",
+    "line": 411
+   },
+   "original": "stitch_tb_pkg::st_seqr",
+   "owner": "st_tb_top",
+   "replacement": "stitch_tb_pkg::top_seqr",
+   "status": "applied"
+  }
+ ],
+ "root": {
+  "name": "uvm_test_top",
+  "type": "stitch_tb_pkg::st_test"
+ },
+ "sources": [
+  "stitch.svdb"
+ ],
+ "version": 1
+}
