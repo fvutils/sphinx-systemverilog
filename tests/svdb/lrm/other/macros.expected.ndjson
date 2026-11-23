@@ -1,0 +1,14 @@
+{"id": "f1", "lang": "sv", "path": "macros.sv", "r": "file"}
+{"default_nettype": "wire", "files": ["f1"], "id": "cu0", "r": "unit"}
+{"kind": "module", "loc": {"col": 8, "file": "f1", "line": 14}, "name": "macro_top", "ns": "design", "pos": 0, "qname": "macro_top", "r": "object"}
+{"detail": {"type": {"form": "builtin", "text": "logic [32-1:0]"}}, "kind": "variable", "loc": {"col": 22, "file": "f1", "line": 15}, "name": "data", "ns": "design", "parent": "macro_top", "pos": 0, "qname": "macro_top::data", "r": "object", "sig": "logic [32-1:0] data"}
+{"detail": {"params": [{"name": "sig"}, {"default": "clk_i", "name": "clk"}, {"default": "\"bad\"", "name": "msg"}, {"default": "", "name": "tag"}]}, "kind": "macro", "loc": {"col": 9, "file": "f1", "line": 9}, "name": "CHECK", "ns": "macro", "pos": 2, "qname": "CHECK", "r": "object", "sig": "`define CHECK(sig, clk = clk_i, msg = \"bad\", tag =)"}
+{"detail": {"redefined_at": [{"col": 9, "file": "f1", "line": 7}]}, "kind": "macro", "loc": {"col": 9, "file": "f1", "line": 12}, "name": "DEPTH", "ns": "macro", "pos": 4, "qname": "DEPTH", "r": "object", "sig": "`define DEPTH 32"}
+{"kind": "macro", "loc": {"col": 9, "file": "f1", "line": 11}, "name": "EMPTY", "ns": "macro", "pos": 3, "qname": "EMPTY", "r": "object", "sig": "`define EMPTY"}
+{"detail": {"params": [{"name": "a"}, {"name": "b"}]}, "kind": "macro", "loc": {"col": 9, "file": "f1", "line": 8}, "name": "MAX", "ns": "macro", "pos": 1, "qname": "MAX", "r": "object", "sig": "`define MAX(a, b) ( ( a ) > ( b ) ? ( a ) : ( b ) )"}
+{"of": "CHECK", "r": "body", "text": "assert property (@(posedge clk) !$isunknown(sig)) else $error(msg)"}
+{"of": "DEPTH", "r": "body", "text": "32"}
+{"of": "MAX", "r": "body", "text": "((a) > (b) ? (a) : (b))"}
+{"count": 1, "def": "macro_top", "key": "e3b0c44298fc1c14", "r": "elab"}
+{"elab": "macro_top@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}
+{"code": "Suppressed", "message": "1 non-error parser diagnostic(s) suppressed", "r": "diag", "severity": "note"}

@@ -123,14 +123,14 @@ class _UvmDirective(Directive):
 
         provider = getattr(index, "uvm_provider", None)
         if provider is None:
-            # The index was unpickled from Sphinx's environment, so the live
-            # compilation is gone.  Degrade with an actionable warning rather
-            # than crashing a build that may not even be about this page.
+            # Nothing was parsed, so there is no testbench.  Degrade with an
+            # actionable warning rather than crashing a build that may not
+            # even be about this page.
             if "optional" not in self.options:
                 logger.warning(
-                    "sphinx-systemverilog: the elaborated testbench is not "
-                    "available in this process, so %s cannot render; a full "
-                    "rebuild (sphinx-build -E) will restore it",
+                    "sphinx-systemverilog: no SystemVerilog sources were "
+                    "parsed, so %s cannot render; check sv_source_dirs and "
+                    "sv_build_units",
                     self.what, type="systemverilog",
                     location=(env.docname, self.lineno),
                 )

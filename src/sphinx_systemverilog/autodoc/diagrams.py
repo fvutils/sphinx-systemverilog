@@ -125,14 +125,12 @@ class SvInstanceDiagram(Directive):
         index = getattr(env, "sv_index", None)
         if index is None:
             return []
-        # This is the point at which the hierarchy walk is paid for.  Nothing
-        # earlier in the build touches it.
         structure = getattr(index, "structure", None)
         if structure is None:
             logger.warning(
-                "sphinx-systemverilog: the elaborated design is not available in "
-                "this process, so %r cannot be diagrammed; a full rebuild "
-                "(sphinx-build -E) will restore it", top, type="systemverilog",
+                "sphinx-systemverilog: no SystemVerilog sources were parsed, so "
+                "%r cannot be diagrammed; check sv_source_dirs and "
+                "sv_build_units", top, type="systemverilog",
                 location=(env.docname, self.lineno),
             )
             return []
@@ -144,8 +142,12 @@ class SvInstanceDiagram(Directive):
                 location=(env.docname, self.lineno),
             )
             return []
+        from ..linkout import external_ports
+
+        app = env.app
         node = graphviz()
-        node["code"] = build_instance_dot(edges, top)
+        node["code"] = build_instance_dot(
+            edges, top, ports=lambda name: external_ports(app, name))
         node["options"] = {"docname": env.docname}
         node["alt"] = f"Instance diagram of {top}"
         return [node]
@@ -167,12 +169,35 @@ def _edge_pairs(entry: Any) -> tuple[str, str]:
     return label, entry.type_name
 
 
-def build_instance_dot(edges: dict, top: str) -> str:
-    """Graphviz ``dot`` for the structural composition reachable from *top*."""
+#: Port directions in edge labels, in this order; anything else follows.
+_DIRS = ("input", "output", "inout", "ref")
+_DIR_ABBREV = {"input": "in", "output": "out"}
+
+
+def _port_label(ports: list[tuple[str, str]]) -> str:
+    """``in: a, b`` / ``out: c`` lines (dot ``\\n``-separated) for *ports*."""
+    groups: dict[str, list[str]] = {}
+    for name, d in ports:
+        groups.setdefault(d or "port", []).append(name)
+    order = [d for d in _DIRS if d in groups] + [d for d in groups if d not in _DIRS]
+    return "\\n".join(f"{_DIR_ABBREV.get(d, d)}: {', '.join(groups[d])}" for d in order)
+
+
+def build_instance_dot(edges: dict, top: str, ports: Any = None) -> str:
+    """Graphviz ``dot`` for the structural composition reachable from *top*.
+
+    *ports*, if given, maps the definition name of an unresolved instance to
+    its ``(name, dir)`` ports (from a ``role: external`` database), or None;
+    the edge to such an instance lists them under the instance name.
+    """
     lines = ["digraph instances {", "  rankdir=TB;",
              '  node [shape=box, fontsize=10, height=0.25];',
              '  edge [arrowsize=0.7, fontsize=8];']
     nodes_in: set[str] = set()
+    # Definitions the build does not have (``sv_external``): drawn dotted.
+    unresolved: set[str] = set()
+    # Definitions from ``sv_external_sources``: drawn dashed (§6.5).
+    external: set[str] = set()
     drawn: set[tuple[str, str, str]] = set()
     queue = [top]
     visited: set[str] = set()
@@ -185,15 +210,28 @@ def build_instance_dot(edges: dict, top: str) -> str:
         for entry in edges.get(mod, []):
             inst_name, child_type = _edge_pairs(entry)
             nodes_in.add(child_type)
+            if getattr(entry, "unresolved", False):
+                unresolved.add(child_type)
+            elif getattr(entry, "external", False):
+                external.add(child_type)
             key = (mod, child_type, inst_name)
             if key not in drawn:
                 drawn.add(key)
+                label = inst_name
+                if ports is not None and getattr(entry, "unresolved", False):
+                    known = ports(child_type)
+                    if known:
+                        label = f"{inst_name}\\n{_port_label(known)}"
                 lines.append(
-                    f'  "{mod}" -> "{child_type}" [label="{inst_name}"];'
+                    f'  "{mod}" -> "{child_type}" [label="{label}"];'
                 )
             queue.append(child_type)
     for name in sorted(nodes_in):
         attrs = ' style=filled fillcolor="#e8e8e8"' if name == top else ""
+        if name in unresolved:
+            attrs = " style=dotted"
+        elif name in external:
+            attrs = " style=dashed"
         lines.append(f'  "{name}" [label="{name}"{attrs}];')
     lines.append("}")
     return "\n".join(lines)

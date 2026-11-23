@@ -7,6 +7,7 @@ under ``tests/fixtures/sv`` using the very directives the project provides.
 from __future__ import annotations
 
 import os
+import sys
 
 project = "sphinx-systemverilog"
 author = "Matthew Ballance"
@@ -14,12 +15,16 @@ copyright = "2026, Matthew Ballance"
 
 extensions = [
     "myst_parser",
+    "sphinx.ext.autodoc",
     "sphinx_rtd_theme",
     "sphinx_systemverilog",
 ]
 
 # -- sphinx-systemverilog -----------------------------------------------------
 _here = os.path.dirname(__file__)
+# autodoc of the svdb API (usage/svdb-api) imports from the source tree, so the
+# docs build does not depend on an installed copy being current.
+sys.path.insert(0, os.path.abspath(os.path.join(_here, "..", "src")))
 _fixtures = os.path.abspath(os.path.join(_here, "..", "tests", "fixtures", "sv"))
 # "auto" sniffs each comment: NaturalDocs blocks use the ND dialect, everything
 # else falls back to native - so all example pages render from one config.

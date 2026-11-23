@@ -1,0 +1,17 @@
+{"id": "f1", "lang": "sv", "path": "imports.sv", "r": "file"}
+{"default_nettype": "wire", "files": ["f1"], "id": "cu0", "r": "unit"}
+{"kind": "module", "loc": {"col": 8, "file": "f1", "line": 20}, "name": "imp_top", "ns": "design", "pos": 2, "qname": "imp_top", "r": "object"}
+{"detail": {"ansi": true, "dir": "input", "net_type": "wire", "type": {"form": "builtin", "text": "logic"}}, "kind": "port", "loc": {"col": 48, "file": "f1", "line": 20}, "name": "clk", "ns": "design", "parent": "imp_top", "pos": 0, "qname": "imp_top::clk", "r": "object", "sig": "input logic clk"}
+{"detail": {"type": {"form": "typedef", "refs": [{"at": [0, 6], "name": "word_t"}], "text": "word_t"}}, "kind": "variable", "loc": {"col": 10, "file": "f1", "line": 22}, "name": "v", "ns": "design", "parent": "imp_top", "pos": 1, "qname": "imp_top::v", "r": "object", "sig": "word_t v"}
+{"doc": {"text": "D3e golden: LRM 26.3/26.6 package imports and exports -- wildcard and\nexplicit, in a package and a module body and header.  The $unit import is\nnot recorded: there is no compilation-unit object to scope it to yet."}, "kind": "package", "loc": {"col": 9, "file": "f1", "line": 5}, "name": "base_pkg", "ns": "package", "pos": 0, "qname": "base_pkg", "r": "object"}
+{"detail": {"type": {"form": "builtin", "text": "int"}}, "kind": "variable", "loc": {"col": 7, "file": "f1", "line": 7}, "name": "counter", "ns": "package", "parent": "base_pkg", "pos": 1, "qname": "base_pkg::counter", "r": "object", "sig": "int counter"}
+{"detail": {"form": "alias", "type": {"form": "builtin", "text": "int"}}, "kind": "typedef", "loc": {"col": 15, "file": "f1", "line": 6}, "name": "word_t", "ns": "package", "parent": "base_pkg", "pos": 0, "qname": "base_pkg::word_t", "r": "object", "sig": "typedef int word_t"}
+{"kind": "package", "loc": {"col": 9, "file": "f1", "line": 10}, "name": "mid_pkg", "ns": "package", "pos": 1, "qname": "mid_pkg", "r": "object"}
+{"detail": {"type": {"form": "typedef", "refs": [{"at": [0, 6], "name": "word_t"}], "text": "word_t"}}, "kind": "variable", "loc": {"col": 10, "file": "f1", "line": 15}, "name": "w", "ns": "package", "parent": "mid_pkg", "pos": 0, "qname": "mid_pkg::w", "r": "object", "sig": "word_t w"}
+{"item": "*", "loc": {"col": 10, "file": "f1", "line": 11}, "package": {"name": "base_pkg", "ns": "package"}, "r": "import", "scope": "mid_pkg"}
+{"item": "word_t", "loc": {"col": 10, "file": "f1", "line": 12}, "package": {"name": "base_pkg", "ns": "package"}, "r": "import", "scope": "mid_pkg"}
+{"export": true, "item": "word_t", "loc": {"col": 10, "file": "f1", "line": 13}, "package": {"name": "base_pkg", "ns": "package"}, "r": "import", "scope": "mid_pkg"}
+{"item": "*", "loc": {"col": 23, "file": "f1", "line": 20}, "package": {"name": "mid_pkg", "ns": "package"}, "r": "import", "scope": "imp_top"}
+{"item": "word_t", "loc": {"col": 10, "file": "f1", "line": 21}, "package": {"name": "base_pkg", "ns": "package"}, "r": "import", "scope": "imp_top"}
+{"count": 1, "def": "imp_top", "key": "e3b0c44298fc1c14", "r": "elab"}
+{"elab": "imp_top@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}

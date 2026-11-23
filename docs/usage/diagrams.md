@@ -82,8 +82,8 @@ rendered as having no children at all. That is fixed.
 ### Cost
 
 Reading the hierarchy means walking the elaborated design, which is by a wide
-margin the most expensive thing this extension does. It happens **only when a
-directive asks for it**, and at most once per build. See
+margin the most expensive thing this extension does. It happens once per
+change of the sources, when the [design database](database.md) is built. See
 [Elaboration cost](elaboration-cost) if your design is large.
 
 ## UVM schematics

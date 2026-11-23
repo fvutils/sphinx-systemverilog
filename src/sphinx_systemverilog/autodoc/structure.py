@@ -88,14 +88,15 @@ class _StructureDirective(Directive):
             )
             return None
 
-        # The one place the hierarchy walk is paid for.
+        # Read from the database's snapshot, which any process can open.
         structure = getattr(index, "structure", None)
         if structure is None:
+            # Only when nothing was parsed: there is no design to elaborate.
             if "optional" not in self.options:
                 logger.warning(
-                    "sphinx-systemverilog: the elaborated design is not "
-                    "available in this process, so %s cannot render %r; a full "
-                    "rebuild (sphinx-build -E) will restore it",
+                    "sphinx-systemverilog: no SystemVerilog sources were "
+                    "parsed, so %s cannot render %r; check sv_source_dirs and "
+                    "sv_build_units",
                     self.what, target, type="systemverilog",
                     location=(env.docname, self.lineno),
                 )
@@ -338,6 +339,12 @@ def _append_instance_line(
     total = instance.total_count * len(names)
     if total > 1:
         block += nodes.Text(f"   (×{total})")
+    if getattr(instance, "unresolved", False):
+        # Defined outside the build (``sv_external``): nothing below it.
+        block += nodes.Text("   (not in build)")
+    elif getattr(instance, "external", False):
+        # Defined in ``sv_external_sources``: known, documented elsewhere.
+        block += nodes.Text("   (external)")
     block += nodes.Text("\n")
 
 

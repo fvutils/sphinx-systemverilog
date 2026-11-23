@@ -608,15 +608,17 @@ not "pretend this is not here".
 
 ## Cost
 
-Nothing here is computed unless a UVM directive asks for it. Extracting the
-component hierarchy means visiting every `build_phase` in the project, so an
-RTL-only project — or any page that does not use one of these directives — pays
-nothing at all. When a directive does ask, the extraction happens once per build
-and is shared by every page.
+The testbench views are computed when the [design database](database.md) is
+built, once per change of the sources, and every page in every process reads
+that copy: the component hierarchy under the configured or detected root, the
+`config_db` scan, the factory overrides and the interface bindings. A build of
+unchanged sources computes none of it. In a project with no UVM classes, the
+cost is negligible.
 
-The component hierarchy and the `config_db` scan are separate costs, and asking
-for one does not compute the other: a page with only a config table never walks
-a single `build_phase`.
+Two things are computed on demand instead, and memoized: a tree under a root
+that a directive names itself, and a sequence's activity. A process that has
+not parsed the sources parses them once to answer either, until the testbench
+moves into the database.
 
 `sv:uvm-schematic` reads no second structure: connections and TLM ports are
 extracted alongside the components, once per component type, during the same
@@ -640,5 +642,4 @@ the join descends one hierarchical name rather than searching for it, which is
 what keeps a binding table cheap on a design where the hierarchy walk would not
 be.
 
-This is the same lazy contract the [design structure](structure) directives use,
-and for the same reason.
+The [design structure](structure) directives follow the same rule.

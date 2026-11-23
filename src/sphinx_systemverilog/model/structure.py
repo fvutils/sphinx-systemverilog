@@ -25,10 +25,12 @@ Two consequences worth stating explicitly:
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, NamedTuple
 
+from ..svdb import canon
 from .locations import resolve_location
 from .objects import SourceRef
 
@@ -114,6 +116,12 @@ class SvInstance:
     #: Elaborated parameter values, in declaration order.
     params: tuple[SvParam, ...] = ()
     location: SourceRef | None = None
+    #: The definition is not in the build (an absent VIP, say).  There is no
+    #: body to walk, and :attr:`params` are the overrides as written, unevaluated.
+    unresolved: bool = False
+    #: The definition comes from ``sv_external_sources``: known, but documented
+    #: elsewhere.  The walk still descends into it.
+    external: bool = False
 
     @property
     def path(self) -> str:
@@ -137,7 +145,9 @@ class SvInstance:
         """``#(W=8, LANES=4)``, or ``""`` when the instance takes no overrides."""
         if not self.params:
             return ""
-        inner = ", ".join(f"{p.name}={p.display}" for p in self.params)
+        inner = ", ".join(
+            f"{p.name}={p.display}" if p.name else p.display for p in self.params
+        )
         return f"#({inner})"
 
 
@@ -160,6 +170,24 @@ class _GenStep:
     def collapsed(self) -> str:
         """The source-shaped path element (``g_lp[*]``)."""
         return f"{self.name}[*]" if self.index is not None else self.name
+
+
+class GenDecision(NamedTuple):
+    """One generate construct's outcome: a for-loop's iteration count, or one
+    arm of an if/case construct and whether it was taken.
+
+    :attr:`path` is the declared block's name segments, relative to the
+    elaboration's own definition -- the same segments :func:`_site_qname`
+    joins with ``::`` after the type name, so a reader can build the same
+    qname :mod:`model.declarations` gave the block without new naming logic.
+    """
+
+    path: tuple[str, ...]
+    #: ``None`` for a for-loop (always "taken"); ``True``/``False`` for one
+    #: arm of an if/case construct.
+    taken: bool | None = None
+    #: Iteration count, for a for-loop only.
+    iterations: int | None = None
 
 
 @dataclass(frozen=True)
@@ -205,6 +233,19 @@ class DesignStructure:
     ] = field(default_factory=dict)
     #: Child definition name -> every place it is instantiated.
     used_by: dict[str, list[UsageSite]] = field(default_factory=dict)
+    #: ``(definition name, parameter values)`` -> every generate construct's
+    #: outcome inside that elaboration (D3c-IMPL-3): which if/case arm was
+    #: taken, and how many iterations a for-loop ran.
+    generate: dict[
+        tuple[str, tuple[tuple[str, str], ...]], list[GenDecision]
+    ] = field(default_factory=dict)
+    #: ``(definition name, parameter values)`` -> the declared-qname path
+    #: segments of every instance inside an untaken generate arm of that
+    #: elaboration (D3c-IMPL-3).  These never elaborate, so they carry no
+    #: :class:`SvInstance` -- only enough to name a ``present: false`` site.
+    absent: dict[
+        tuple[str, tuple[tuple[str, str], ...]], list[tuple[str, ...]]
+    ] = field(default_factory=dict)
     #: Instances visited by the walk, and the quantity the budget counts.
     #: Generate iterations count individually; instance-array elements count
     #: once, since only one element is walked.
@@ -297,9 +338,13 @@ class StructureProvider:
         source_manager: Any = None,
         tops: Iterable[str] | None = None,
         max_instances: int = DEFAULT_MAX_INSTANCES,
+        external_files: dict[str, str] | None = None,
     ) -> None:
         self._compilation = compilation
         self._source_manager = source_manager
+        #: ``sv_external_sources`` (absolute path -> origin): instances of what
+        #: they define are :attr:`SvInstance.external`.
+        self._external_files = {os.path.abspath(k): v for k, v in (external_files or {}).items()}
         #: Restrict the walk to these top-level module names (empty = all).
         self._tops = list(tops or [])
         self._max_instances = max_instances or DEFAULT_MAX_INSTANCES
@@ -370,6 +415,18 @@ class StructureProvider:
         # cached by name: two elaborations of one module can genuinely differ,
         # most obviously when an if-generate branches on a parameter.
         elaboration = structure.elaborations.setdefault((type_name, params), [])
+        key = (type_name, params)
+        if key not in structure.generate:
+            decisions, absent = [], []
+            for item in self._generate_decisions(body, (), SymbolKind):
+                if isinstance(item, GenDecision):
+                    decisions.append(item)
+                else:
+                    absent.append(item)
+            if decisions:
+                structure.generate[key] = decisions
+            if absent:
+                structure.absent[key] = absent
         for child, steps, array in self._instantiations(body, (), state, SymbolKind):
             if state.exhausted:
                 structure.truncated = True
@@ -420,6 +477,13 @@ class StructureProvider:
             kind = member.kind
             if kind == SymbolKind.Instance:
                 yield member, steps, None
+            elif kind == SymbolKind.UninstantiatedDef and not getattr(
+                member, "isChecker", False
+            ):
+                # A definition the build does not have.  Untaken generate arms
+                # never reach here (skipped below), so this is a real instance
+                # of something defined elsewhere.
+                yield member, steps, None
             elif kind == SymbolKind.InstanceArray:
                 # Elements of an array share a parameterization and a body, so
                 # one element describes them all; the count carries the rest.
@@ -456,6 +520,79 @@ class StructureProvider:
                 sub = steps + (_GenStep(name, None, 1),) if name else steps
                 yield from self._instantiations(member, sub, state, SymbolKind)
 
+    def _generate_decisions(
+        self, scope: Any, path: tuple[str, ...], SymbolKind: Any,
+    ):
+        """Yield :class:`GenDecision` and absent-instance path tuples for
+        every generate construct directly in *scope*, recursing into a
+        for-loop's representative iteration and a taken if/case arm (mirrors
+        :meth:`_instantiations`), and into an untaken arm only far enough to
+        name the instances it would have declared (see
+        :meth:`_absent_members`)."""
+        try:
+            members = list(scope)
+        except TypeError:
+            return
+        i, n = 0, len(members)
+        while i < n:
+            member = members[i]
+            kind = member.kind
+            if kind == SymbolKind.GenerateBlockArray:
+                entries = [
+                    e for e in _members(member)
+                    if e.kind == SymbolKind.GenerateBlock
+                    and not getattr(e, "isUninstantiated", False)
+                ]
+                name = getattr(member, "name", "") or ""
+                block_path = path + (name,) if name else path
+                yield GenDecision(block_path, None, len(entries))
+                if entries:
+                    yield from self._generate_decisions(entries[0], block_path, SymbolKind)
+                i += 1
+            elif kind == SymbolKind.GenerateBlock:
+                ci = getattr(member, "constructIndex", None)
+                j = i
+                group = []
+                while j < n and members[j].kind == SymbolKind.GenerateBlock \
+                        and getattr(members[j], "constructIndex", None) == ci:
+                    group.append(members[j])
+                    j += 1
+                names = canon.disambiguate([g.name or _genblk_fallback(g) for g in group])
+                for arm, name in zip(group, names):
+                    taken = not getattr(arm, "isUninstantiated", False)
+                    block_path = path + (name,)
+                    yield GenDecision(block_path, taken)
+                    if taken:
+                        yield from self._generate_decisions(arm, block_path, SymbolKind)
+                    else:
+                        yield from self._absent_members(arm, block_path, SymbolKind)
+                i = j
+            else:
+                i += 1
+
+    def _absent_members(
+        self, scope: Any, path: tuple[str, ...], SymbolKind: Any,
+    ):
+        """Instance path tuples inside a generate arm that was never taken
+        (``UninstantiatedDef`` symbols, per slang), recursing through any
+        further generate nesting on the same, never-taken footing."""
+        for m in _members(scope):
+            kind = m.kind
+            if kind in (SymbolKind.Instance, SymbolKind.InstanceArray, SymbolKind.UninstantiatedDef):
+                name = getattr(m, "name", "") or ""
+                if name:
+                    yield path + (name,)
+            elif kind == SymbolKind.GenerateBlockArray:
+                name = getattr(m, "name", "") or ""
+                sub_path = path + (name,) if name else path
+                subs = _members(m)
+                if subs:
+                    yield from self._absent_members(subs[0], sub_path, SymbolKind)
+            elif kind == SymbolKind.GenerateBlock:
+                name = getattr(m, "name", "") or getattr(m, "externalName", "") or ""
+                sub_path = path + (name,) if name else path
+                yield from self._absent_members(m, sub_path, SymbolKind)
+
     def _make_instance(
         self, sym: Any, type_name: str, steps: tuple["_GenStep", ...], array: Any
     ) -> SvInstance:
@@ -469,6 +606,7 @@ class StructureProvider:
         generate_count = 1
         for step in steps:
             generate_count *= max(step.count, 1)
+        unresolved = getattr(sym, "body", None) is None
         return SvInstance(
             inst_name=inst_name,
             type_name=type_name,
@@ -476,11 +614,22 @@ class StructureProvider:
             array_range=array_range,
             array_count=array_count,
             generate_count=generate_count,
-            params=self._parameters(sym),
+            params=_written_parameters(sym) if unresolved else self._parameters(sym),
             location=resolve_location(
                 self._source_manager, getattr(array or sym, "location", None)
             ),
+            unresolved=unresolved,
+            external=not unresolved and self._is_external(sym.body),
         )
+
+    def _is_external(self, body: Any) -> bool:
+        if not self._external_files or self._source_manager is None:
+            return False
+        try:
+            path = self._source_manager.getFileName(body.definition.location)
+        except Exception:
+            return False
+        return os.path.abspath(str(path)) in self._external_files
 
     def _parameters(self, sym: Any) -> tuple[SvParam, ...]:
         """Elaborated parameter values for one instance.
@@ -538,6 +687,9 @@ def _members(scope: Any) -> list[Any]:
 
 def _instance_type(inst: Any) -> str | None:
     """The definition name behind an instance symbol."""
+    unresolved = getattr(inst, "definitionName", None)
+    if unresolved:
+        return unresolved
     body = getattr(inst, "body", None)
     if body is not None:
         defn = getattr(body, "definition", None)
@@ -546,6 +698,26 @@ def _instance_type(inst: Any) -> str | None:
         if getattr(body, "name", ""):
             return body.name
     return getattr(inst, "name", None) or None
+
+
+def _written_parameters(sym: Any) -> tuple[SvParam, ...]:
+    """Parameter overrides of an unresolved instance, as written.
+
+    With no definition there is nothing to evaluate against, so the values are
+    the source text; ordered overrides have no name.
+    """
+    syntax = getattr(getattr(sym, "syntax", None), "parent", None)
+    assignment = getattr(syntax, "parameters", None)
+    if assignment is None:
+        return ()
+    out: list[SvParam] = []
+    for item in getattr(assignment, "parameters", None) or ():
+        expr = getattr(item, "expr", None)
+        if expr is None and not hasattr(item, "name"):
+            continue  # separator token
+        name = getattr(getattr(item, "name", None), "valueText", "") or ""
+        out.append(SvParam(name, str(expr).strip() if expr is not None else ""))
+    return tuple(out)
 
 
 def _first_element(array: Any) -> Any | None:
@@ -582,6 +754,13 @@ def _element_count(array: Any) -> int:
     return count or 1
 
 
+def _genblk_fallback(sym: Any) -> str:
+    """The LRM 27.6 fallback name for an unlabeled generate block
+    (``genblk<n>``), matching :meth:`model.declarations.Extractor._genblk_fallback`."""
+    ci = getattr(sym, "constructIndex", None)
+    return f"genblk{ci}" if ci is not None else "genblk"
+
+
 def _add_edge(
     edges: dict[str, list[SvInstance]], parent: str, record: SvInstance
 ) -> None:
@@ -598,3 +777,107 @@ def _add_edge(
 def _append_unique(bucket: list[SvInstance], record: SvInstance) -> None:
     if record not in bucket:
         bucket.append(record)
+
+
+# -- elab / top records (D3c-IMPL-2) ------------------------------------------
+
+_LOOP_INDEX = re.compile(r"\[\*\]$")
+
+
+def _elab_key(params: tuple[SvParam, ...]) -> str:
+    return canon.elab_key([(p.name, p.value) for p in params])
+
+
+def _site_qname(type_name: str, site: SvInstance) -> str:
+    """The declared object's qname for one instantiation *site*: the same
+    name :mod:`model.declarations` gives it, since a for-loop's generate
+    block is named for the loop (``g_lane``, never ``g_lane[*]``) and an
+    if/case arm that is ever taken always has a real, non-blank name (LRM
+    27.6) -- so no disambiguation is needed to name a taken arm, only an
+    untaken one, which this (reduced) pass does not represent as a site at
+    all (see :func:`elab_records`)."""
+    parts = [type_name, *(_LOOP_INDEX.sub("", p) for p in site.generate_path), site.inst_name]
+    return "::".join(parts)
+
+
+def _instantiation_count(structure: "DesignStructure", type_name: str, key: str) -> int:
+    """How many times one elaboration (*type_name* at *key*) is instantiated,
+    summed over every declared site that elaborates it.
+
+    Scans :attr:`DesignStructure.elaborations`, not :attr:`~.used_by`: a
+    generate loop's :class:`UsageSite` list has one entry per *concrete*
+    iteration, each already carrying the loop's full ``total_count``, so
+    summing it would count every iteration's multiplicity once per
+    iteration. ``elaborations`` lists each declared site once, win."""
+    total = 0
+    for sites in structure.elaborations.values():
+        for site in sites:
+            if site.type_name == type_name and _elab_key(site.params) == key:
+                total += site.total_count
+    return total
+
+
+def elab_records(structure: "DesignStructure") -> list[dict]:
+    """``elab`` records (plan §5.3) for every elaboration a walk found.
+
+    This is the declarations-level slice of structure: one elaboration, its
+    parameter values, the sites it instantiates (including, since
+    D3c-IMPL-3, a ``present: false`` entry for an instance inside a generate
+    arm that was never taken), and the ``generate`` decision list (which arm
+    was taken, how many iterations a for-loop ran) -- each named by the
+    object :mod:`model.declarations` already made for it.
+    """
+    tops = set(structure.tops)
+    out: list[dict] = []
+    for (type_name, params), sites in structure.elaborations.items():
+        key = _elab_key(params)
+        ekey = (type_name, params)
+        rec: dict[str, Any] = {"r": "elab", "def": type_name, "key": key,
+                                "count": 1 if type_name in tops else _instantiation_count(structure, type_name, key)}
+        if params:
+            prec = []
+            for p in params:
+                entry = {"name": p.name, "value": p.value}
+                if p.display != p.value:
+                    entry["display"] = p.display
+                if p.type_name:
+                    entry["type"] = p.type_name
+                prec.append(entry)
+            rec["params"] = prec
+        site_list = []
+        for site in sites:
+            entry: dict[str, Any] = {"inst": _site_qname(type_name, site)}
+            if site.total_count != 1:
+                entry["count"] = site.total_count
+            child_key = (site.type_name, site.params)
+            if child_key in structure.elaborations:
+                entry["elab"] = canon.elab_ref(site.type_name, _elab_key(site.params))
+            site_list.append(entry)
+        for path in structure.absent.get(ekey, ()):
+            site_list.append({"inst": "::".join((type_name, *path)), "present": False})
+        if site_list:
+            rec["sites"] = site_list
+        gen_list = []
+        for decision in structure.generate.get(ekey, ()):
+            entry = {"block": "::".join((type_name, *decision.path))}
+            if decision.taken is not None:
+                entry["taken"] = decision.taken
+            if decision.iterations is not None:
+                entry["iterations"] = decision.iterations
+            gen_list.append(entry)
+        if gen_list:
+            rec["generate"] = gen_list
+        out.append(rec)
+    return out
+
+
+def top_records(structure: "DesignStructure", *, configured: bool) -> list[dict]:
+    """``top`` records: one per elaborated top-level instance."""
+    origin = "configured" if configured else "inferred"
+    out: list[dict] = []
+    for type_name in structure.tops:
+        for (tname, params) in structure.elaborations:
+            if tname == type_name:
+                out.append({"r": "top", "elab": canon.elab_ref(type_name, _elab_key(params)), "origin": origin})
+                break
+    return out

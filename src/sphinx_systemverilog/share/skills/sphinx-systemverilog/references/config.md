@@ -59,9 +59,10 @@ why.
 
 ---
 
-## RTL structure (all lazy)
+## RTL structure
 
-Consulted only when a structural directive actually asks for the hierarchy.
+Applied when the design database is built (once per change of the sources),
+which walks the hierarchy for every structural directive to read.
 
 | Value | Default | Type | Meaning |
 |---|---|---|---|
@@ -77,7 +78,7 @@ and a testbench top that drags in the whole DUT is usually not what you meant.
 
 ---
 
-## UVM testbench (all lazy)
+## UVM testbench
 
 | Value | Default | Type | Meaning |
 |---|---|---|---|
@@ -98,6 +99,18 @@ The UVM library's own internals are always stopped at, with no configuration.
 Turn `sv_uvm_warn_orphans` on only as a project decision: it makes a testbench
 smell fail a `-W` build, which is valuable *and* is not something installing a
 documentation extension should do to you by default.
+
+---
+
+## Design database
+
+| Value | Default | Type | Meaning |
+|---|---|---|---|
+| `sv_db_cache` | `True` | bool | Keep the parsed database in `<doctreedir>/svdb/` and reuse it while the sources are unchanged. `False` rebuilds it in memory every build. |
+| `sv_databases` | `[]` | list | Pre-built databases (`svdb build`, `svdb import`) read after the sources, in order: paths relative to `conf.py`, or `{"path": ..., "role": "local" \| "external"}`; an external one only adds link targets and diagram ports. A missing file is a configuration error. |
+| `sv_external` | `[]` | list | Glob patterns (case-sensitive) of modules/interfaces/classes/packages defined outside the sources: no "unknown" warning for those names only; instances shown `(not in build)`, dotted in diagrams. |
+| `sv_external_sources` | `[]` | list or dict | Stub/header sources parsed with the project but flagged `external` (paths/globs relative to `conf.py`, or `{origin: [paths]}`); instances shown `(external)`, dashed in diagrams. |
+| `sv_external_docs` | `{}` | dict | `{glob: url_template}` (`{name}`, `{qname}`, `{kind}`, `{anchor}`) linking names documented elsewhere; tried after external databases and intersphinx. See docs/usage/external.md. |
 
 ---
 

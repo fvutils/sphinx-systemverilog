@@ -1,0 +1,8 @@
+{"id": "f1", "lang": "sv", "path": "let.sv", "r": "file"}
+{"default_nettype": "wire", "files": ["f1"], "id": "cu0", "r": "unit"}
+{"kind": "module", "loc": {"col": 8, "file": "f1", "line": 8}, "name": "top", "ns": "design", "pos": 1, "qname": "top", "r": "object"}
+{"detail": {"args": [{"name": "x", "type": {"form": "untyped", "text": "untyped"}}, {"default": {"text": "5"}, "name": "thresh", "type": {"form": "builtin", "text": "int"}}], "expr": {"refs": [{"at": [0, 1], "name": "x"}, {"at": [4, 10], "name": "thresh"}], "text": "x > thresh"}}, "kind": "let", "loc": {"col": 7, "file": "f1", "line": 9}, "name": "is_hi", "ns": "design", "parent": "top", "pos": 0, "qname": "top::is_hi", "r": "object", "sig": "let is_hi(x, thresh)"}
+{"doc": {"text": "D3d golden: LRM 11.12 ``let``, at package scope and at module scope, with\ntyped arguments, an untyped one, and a default value."}, "kind": "package", "loc": {"col": 9, "file": "f1", "line": 3}, "name": "pkg", "ns": "package", "pos": 0, "qname": "pkg", "r": "object"}
+{"detail": {"args": [{"name": "a", "type": {"form": "builtin", "text": "int"}}, {"name": "b", "type": {"form": "builtin", "text": "int"}}], "expr": {"refs": [{"at": [1, 2], "name": "a"}, {"at": [5, 6], "name": "b"}, {"at": [10, 11], "name": "a"}, {"at": [14, 15], "name": "b"}], "text": "(a > b) ? a : b"}}, "doc": {"text": "The larger of two values."}, "kind": "let", "loc": {"col": 7, "file": "f1", "line": 5}, "name": "max2", "ns": "package", "parent": "pkg", "pos": 0, "qname": "pkg::max2", "r": "object", "sig": "let max2(a, b)"}
+{"count": 1, "def": "top", "key": "e3b0c44298fc1c14", "r": "elab"}
+{"elab": "top@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}

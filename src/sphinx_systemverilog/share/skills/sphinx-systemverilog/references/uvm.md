@@ -407,14 +407,16 @@ using it uses it *instead of* `run_phase`.
 
 ## Cost
 
-Nothing here is computed unless a UVM directive asks for it, and each cost is
-separate:
+The default tree, the `config_db` scan, the overrides and the bindings are
+computed when the design database is built (once per source change) and read
+from it by every page. The rest is computed on demand:
 
 | Cost | Paid by | Shared |
 |---|---|---|
-| Component walk (every `build_phase`) | `sv:uvm-tree`, `sv:uvm-schematic`, `sv:uvm-used-by` | once per root, per build |
-| `config_db` scan (also carries factory overrides) | `sv:uvm-config`, `sv:uvm-binding` | once per build |
-| One `body()` read | `sv:uvm-sequence` | memoized per sequence |
+| Component walk under the default root | database build | every page, every build until a source changes |
+| `config_db` scan (also carries factory overrides) | database build | as above |
+| Component walk under a named root | `sv:uvm-tree:: x`, `:root:` | once per root, per process |
+| One `body()` read | `sv:uvm-sequence` | memoized per sequence, per process |
 
 A tree and a schematic rooted at the **same** component cost one walk between
 them; different roots cost one walk each. `sv:uvm-binding` adds only a look at

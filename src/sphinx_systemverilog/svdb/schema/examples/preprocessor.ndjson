@@ -1,0 +1,13 @@
+{"r":"header","format":"svdb","schema":"1.0","producer":{"name":"hand-written example"},"sections":{"files":"complete","objects":"complete","docs":"complete","bodies":"complete","diagnostics":"complete"}}
+{"r":"file","id":"f1","path":"inc/defs.svh","lang":"svh"}
+{"r":"file","id":"f2","path":"tb/top_pkg.sv","lang":"sv","protected":[[20,48]]}
+{"r":"include","from":"f2","to":"f1","line":2}
+{"r":"unit","id":"cu0","files":["f2"],"defines":{"SIM":"","WIDTH":"32"}}
+{"r":"object","kind":"macro","ns":"macro","qname":"ASSERT_KNOWN","name":"ASSERT_KNOWN","pos":0,"loc":{"file":"f1","line":3,"col":9},"sig":"`define ASSERT_KNOWN(name, sig, clk = clk_i)","doc":{"text":"Assert that sig is never X after reset.","style":"native"},"detail":{"params":[{"name":"name"},{"name":"sig"},{"name":"clk","default":"clk_i"}]}}
+{"r":"body","of":"ASSERT_KNOWN","text":"name: assert property (@(posedge clk) !$isunknown(sig))"}
+{"r":"object","kind":"macro","ns":"macro","qname":"WIDTH","name":"WIDTH","pos":1,"loc":{"file":"f1","line":9,"col":9},"sig":"`define WIDTH 64","detail":{"params":[],"redefined_at":[{"file":"f1","line":7,"col":9}]}}
+{"r":"object","kind":"package","ns":"package","qname":"top_pkg","name":"top_pkg","pos":0,"loc":{"file":"f2","line":4,"col":9},"sig":"package top_pkg"}
+{"r":"object","kind":"class","ns":"package","qname":"top_pkg::agent","name":"agent","parent":"top_pkg","pos":0,"loc":{"file":"f2","line":6,"col":9},"sig":"class agent","detail":{}}
+{"r":"object","kind":"function","ns":"package","qname":"top_pkg::agent::get_type_name","name":"get_type_name","parent":"top_pkg::agent","pos":0,"loc":{"file":"f2","line":7,"col":3},"sig":"virtual function string get_type_name()","quals":["virtual"],"via":[{"macro":"uvm_component_utils","loc":{"file":"f2","line":7,"col":3}},{"macro":"m_uvm_component_registry_internal"}],"flags":["macro_generated"],"detail":{"return":{"text":"string","form":"string"},"args":[]}}
+{"r":"object","kind":"class","ns":"package","qname":"top_pkg::secret_core","name":"secret_core","parent":"top_pkg","pos":1,"loc":{"file":"f2","line":21,"col":9},"sig":"class secret_core","flags":["protected"],"detail":{}}
+{"r":"diag","severity":"warning","code":"RedefinedMacro","message":"macro 'WIDTH' redefined","loc":{"file":"f1","line":9,"col":9}}

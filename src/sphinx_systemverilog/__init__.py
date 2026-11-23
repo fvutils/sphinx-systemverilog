@@ -34,14 +34,17 @@ def _build_index(app: Any) -> None:
     """Build the project-wide source index once per Sphinx build.
 
     Connected to ``builder-inited`` so the index is available before any
-    directive runs, and stored on the build environment.
+    directive runs, and stored on the build environment.  The index reads a
+    database that the front end writes into ``<doctreedir>/svdb/`` and reuses
+    while the sources are unchanged; ``sv_databases`` are read after it.
     """
+    import os
+
     from sphinx.util import logging
-    from .model.index import build_index
 
     logger = logging.getLogger(__name__)
     config = app.config
-    index = build_index(
+    kwargs = dict(
         source_dirs=config.sv_source_dirs,
         build_units=config.sv_build_units,
         doc_style=config.sv_doc_style,
@@ -56,7 +59,31 @@ def _build_index(app: Any) -> None:
         uvm_blackbox=config.sv_uvm_blackbox,
         uvm_blackbox_bases=config.sv_uvm_blackbox_bases,
         uvm_max_components=config.sv_uvm_max_components,
+        external=config.sv_external,
+        external_sources=config.sv_external_sources,
     )
+    from .frontend.build import Options, open_index
+    from .svdb.issues import SvdbError
+
+    databases = [
+        d["path"] if os.path.isabs(d["path"]) else os.path.join(app.confdir, d["path"])
+        for d in config.sv_databases if d["role"] == "local"
+    ]
+    # ``role: external`` databases are not documented here: they only give
+    # link targets (linkout.py).
+    from .linkout import open_external
+
+    open_external(app)
+    cache_dir = os.path.join(app.doctreedir, "svdb") if config.sv_db_cache else None
+    try:
+        index = open_index(
+            Options.make(**kwargs), cache_dir=cache_dir, databases=databases,
+            default_doc_style=config.sv_doc_style,
+        )
+    except SvdbError as e:
+        from sphinx.errors import ConfigError
+
+        raise ConfigError(f"sphinx-systemverilog: {e}") from None
     app.env.sv_index = index
     logger.info(
         "sphinx-systemverilog: indexed %d SystemVerilog object(s)", len(index)
@@ -103,6 +130,12 @@ def setup(app: Any) -> dict[str, Any]:
 
     app.connect("config-inited", validate_config)
     app.connect("builder-inited", _build_index)
+
+    # Link-out for names documented elsewhere, after intersphinx (plan §6.4).
+    from . import linkout
+
+    app.connect("missing-reference", linkout.missing_reference,
+                priority=linkout.PRIORITY)
 
     # viewcode: resolve [source] links and generate highlighted listings.
     from . import viewcode

@@ -107,10 +107,10 @@ against the wrong configuration package. For a configurable core, list the
 files for **one** configuration in `sv_build_units` rather than globbing the
 directory.
 
-**`the elaborated design is not available in this process ... a full rebuild (sphinx-build -E) will restore it`**
-The elaborated design cannot live in Sphinx's cached environment, so an
-incremental or parallel build can render a page in a process that never walked
-it. `sphinx-build -E` restores it.
+**`no SystemVerilog sources were parsed, so ... cannot render`**
+There is no design to elaborate: `sv_source_dirs` / `sv_build_units` name no
+files. (Releases before 0.7 said "not available in this process" here after an
+incremental build; the database removed that case.)
 
 **`N deeper level(s) containing M instance(s) not shown`**
 Not an error — the depth limit reporting itself. Raise `:depth:` or
@@ -161,8 +161,8 @@ package is parsed.
 Expected for a leaf. Use `:optional:` on shared pages, or point the directive
 at a container.
 
-**`the elaborated testbench is not available in this process`**
-Same cause and fix as the RTL equivalent: `sphinx-build -E`.
+**`no SystemVerilog sources were parsed, so ... cannot render`** (UVM)
+Same cause and fix as the RTL equivalent: check `sv_source_dirs`.
 
 **`[unresolved]` nodes in the tree**
 The component's type did not resolve — its package was not parsed. Fix

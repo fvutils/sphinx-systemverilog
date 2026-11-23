@@ -8,7 +8,9 @@ targets self-contained packages; Phase 2 adds include/define-driven elaboration.
 
 from __future__ import annotations
 
+import os
 import re
+from fnmatch import fnmatchcase
 from typing import Any, Iterable
 
 from .comments import clean_comment_block, doc_above_line, split_leading_trivia
@@ -39,6 +41,13 @@ from pyslang.parsing import Token
 from pyslang.syntax import SyntaxTree
 
 
+#: Diagnostics an ``sv_external`` pattern silences for the names it matches.
+#: ``UndeclaredIdentifier`` is how slang reports a class used as a type
+#: (``axi_vip_cfg cfg;``); ``UnknownPackage``, a VIP package import.
+_EXTERNAL_CODES = frozenset({"UnknownModule", "UnknownInterface", "UnknownClass", "UnknownClassOrPackage",
+                             "UnknownPackage", "UndeclaredIdentifier"})
+
+
 class ModelBuilder:
     """Parse SystemVerilog and emit a list of top-level :class:`SvObject`."""
 
@@ -49,6 +58,8 @@ class ModelBuilder:
         defines: dict[str, str] | None = None,
         nodocs_policy: str = "include",
         document_macros: bool = True,
+        external: Iterable[str] | None = None,
+        external_files: dict[str, str] | None = None,
     ) -> None:
         self.doc_style = doc_style
         self.include_dirs = list(include_dirs or [])
@@ -57,6 +68,11 @@ class ModelBuilder:
         self.nodocs_policy = nodocs_policy
         #: Whether to extract ``\\`define`` macros.
         self.document_macros = document_macros
+        #: ``sv_external`` glob patterns: names defined outside the sources.
+        self.external = list(external or [])
+        #: ``sv_external_sources``: absolute path -> origin label.  Parsed like
+        #: any source; what they declare is flagged ``external``.
+        self.external_files = {os.path.abspath(k): v for k, v in (external_files or {}).items()}
         #: The live pyslang ``Compilation``, retained after :meth:`_build` so the
         #: instance hierarchy can be walked lazily.  Never walked during a build.
         self.compilation: Any = None
@@ -229,6 +245,8 @@ class ModelBuilder:
         engine = pyslang.DiagnosticEngine(comp.sourceManager)
         suppressed = 0
         for diag in diags:
+            if self._is_external(diag):
+                continue
             try:
                 severity = engine.getSeverity(diag.code, diag.location)
             except Exception:
@@ -244,6 +262,25 @@ class ModelBuilder:
             except Exception:
                 self.diagnostics.append(str(getattr(diag, "code", diag)))
         self.suppressed_count += suppressed
+
+    def origin_of(self, path: str | None) -> str | None:
+        """The ``sv_external_sources`` origin of the file at *path*, or ``None``
+        when it is one of the project's own sources."""
+        if not path or not self.external_files:
+            return None
+        return self.external_files.get(os.path.abspath(path))
+
+    def _is_external(self, diag: Any) -> bool:
+        """Whether *diag* reports a missing module/class whose name matches an
+        ``sv_external`` pattern.  Only those codes, and only matching names: any
+        other unknown name still warns."""
+        if not self.external or str(diag.code).removeprefix("DiagCode(").rstrip(")") not in _EXTERNAL_CODES:
+            return False
+        try:
+            name = str(diag.args[0])
+        except Exception:
+            return False
+        return any(fnmatchcase(name, p) for p in self.external)
 
     # -- per-symbol dispatch --------------------------------------------------
 
@@ -704,6 +741,7 @@ _SCOPE_SYNTAX_NAMES = {
     "InterfaceDeclaration",
     "ProgramDeclaration",
     "CovergroupDeclaration",
+    "CheckerDeclaration",
     "CompilationUnit",
 }
 

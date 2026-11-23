@@ -27,9 +27,8 @@ WITH_TB = {
     "sv_include_dirs": [str(UVM_STUB)],
 }
 
-#: No sources at all, so no compilation is retained and no provider is
-#: attached. This is the same branch an *unpickled* index takes: Sphinx cannot
-#: pickle a pyslang `Compilation`, so a re-read page sees exactly this state.
+#: No sources at all, so there is no testbench to ask. (Before the database,
+#: an *unpickled* index took this branch too; now it reads the snapshot.)
 NO_SOURCES: dict = {"sv_source_dirs": []}
 
 
@@ -40,8 +39,8 @@ def test_no_testbench_warns_and_says_what_to_do(app, warning):
     app.build()
     text = warning.getvalue()
 
-    assert "not available in this process" in text
-    assert "sphinx-build -E" in text, "the warning must name the remedy"
+    assert "no SystemVerilog sources were parsed" in text
+    assert "sv_source_dirs" in text, "the warning must name the remedy"
 
 
 @pytest.mark.sphinx(

@@ -1,0 +1,7 @@
+{"id": "f1", "lang": "sv", "path": "unit.sv", "r": "file"}
+{"default_nettype": "none", "files": ["f1"], "id": "cu0", "r": "unit", "timescale": "1ns/1ps"}
+{"kind": "module", "loc": {"col": 8, "file": "f1", "line": 4}, "name": "unit_a", "ns": "design", "pos": 0, "qname": "unit_a", "r": "object"}
+{"detail": {"ansi": true, "dir": "input", "net_type": "wire", "type": {"form": "builtin", "text": "logic"}}, "kind": "port", "loc": {"col": 26, "file": "f1", "line": 4}, "name": "a", "ns": "design", "parent": "unit_a", "pos": 0, "qname": "unit_a::a", "r": "object", "sig": "input wire a"}
+{"detail": {"ansi": true, "dir": "output", "net_type": "wire", "type": {"form": "builtin", "text": "logic"}}, "kind": "port", "loc": {"col": 41, "file": "f1", "line": 4}, "name": "y", "ns": "design", "parent": "unit_a", "pos": 1, "qname": "unit_a::y", "r": "object", "sig": "output wire y"}
+{"count": 1, "def": "unit_a", "key": "e3b0c44298fc1c14", "r": "elab"}
+{"elab": "unit_a@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}

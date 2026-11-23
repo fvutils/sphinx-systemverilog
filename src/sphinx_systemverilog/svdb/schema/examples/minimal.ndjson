@@ -1,0 +1,10 @@
+{"r":"header","format":"svdb","schema":"1.0","producer":{"name":"hand-written example"},"sections":{"files":"complete","objects":"complete","docs":"complete"}}
+{"r":"file","id":"f1","path":"rtl/counter.sv","lang":"sv"}
+{"r":"file","id":"f2","path":"tb/pkt_pkg.sv","lang":"sv"}
+{"r":"object","kind":"module","ns":"design","qname":"counter","name":"counter","pos":0,"loc":{"file":"f1","line":3,"col":8},"sig":"module counter #(parameter int W = 8) (input logic clk, output logic [W-1:0] q)","doc":{"text":"A free-running counter.","style":"native"},"detail":{"ansi":true}}
+{"r":"object","kind":"parameter","ns":"design","qname":"counter::W","name":"W","parent":"counter","pos":0,"loc":{"file":"f1","line":3,"col":30},"sig":"parameter int W = 8","detail":{"port_list":true,"type":{"text":"int","form":"builtin"},"default":{"text":"8","value":"8"}}}
+{"r":"object","kind":"port","ns":"design","qname":"counter::clk","name":"clk","parent":"counter","pos":1,"loc":{"file":"f1","line":3,"col":53},"sig":"input logic clk","detail":{"dir":"input","type":{"text":"logic","form":"builtin"},"ansi":true}}
+{"r":"object","kind":"port","ns":"design","qname":"counter::q","name":"q","parent":"counter","pos":2,"loc":{"file":"f1","line":3,"col":79},"sig":"output logic [W-1:0] q","detail":{"dir":"output","type":{"text":"logic [W-1:0]","form":"builtin","refs":[{"at":[7,8],"name":"W","target":"counter::W"}]},"ansi":true}}
+{"r":"object","kind":"package","ns":"package","qname":"pkt_pkg","name":"pkt_pkg","pos":0,"loc":{"file":"f2","line":1,"col":9},"sig":"package pkt_pkg"}
+{"r":"object","kind":"class","ns":"package","qname":"pkt_pkg::packet","name":"packet","parent":"pkt_pkg","pos":0,"loc":{"file":"f2","line":4,"col":9},"sig":"class packet","doc":{"text":"One bus transaction.","style":"native"},"detail":{}}
+{"r":"object","kind":"variable","ns":"package","qname":"pkt_pkg::packet::addr","name":"addr","parent":"pkt_pkg::packet","pos":0,"loc":{"file":"f2","line":5,"col":18},"sig":"rand bit [31:0] addr","quals":["rand"],"detail":{"type":{"text":"bit [31:0]","form":"builtin"}}}

@@ -1,0 +1,16 @@
+{"id": "f1", "lang": "sv", "path": "protected.sv", "protected": [[6, 11], [16, 20], [28, 32]], "r": "file"}
+{"default_nettype": "wire", "files": ["f1"], "id": "cu0", "r": "unit"}
+{"doc": {"text": "An unencrypted `begin`/`end` input envelope is not an encrypted region."}, "kind": "module", "loc": {"col": 8, "file": "f1", "line": 40}, "name": "open_envelope", "ns": "design", "pos": 1, "qname": "open_envelope", "r": "object"}
+{"detail": {"type": {"form": "builtin", "text": "logic"}}, "kind": "variable", "loc": {"col": 9, "file": "f1", "line": 42}, "name": "c", "ns": "design", "parent": "open_envelope", "pos": 0, "qname": "open_envelope::c", "r": "object", "sig": "logic c"}
+{"doc": {"text": "Part of a module encrypted: the module is flagged; `a` and `b` are not."}, "flags": ["protected"], "kind": "module", "loc": {"col": 8, "file": "f1", "line": 14}, "name": "partly", "ns": "design", "pos": 2, "qname": "partly", "r": "object"}
+{"detail": {"type": {"form": "builtin", "text": "logic"}}, "kind": "variable", "loc": {"col": 9, "file": "f1", "line": 15}, "name": "a", "ns": "design", "parent": "partly", "pos": 0, "qname": "partly::a", "r": "object", "sig": "logic a"}
+{"detail": {"type": {"form": "builtin", "text": "logic"}}, "kind": "variable", "loc": {"col": 9, "file": "f1", "line": 21}, "name": "b", "ns": "design", "parent": "partly", "pos": 1, "qname": "partly::b", "r": "object", "sig": "logic b"}
+{"doc": {"text": "In a class method: the function is flagged, the class is not."}, "kind": "package", "loc": {"col": 9, "file": "f1", "line": 25}, "name": "pkg", "ns": "package", "pos": 0, "qname": "pkg", "r": "object"}
+{"kind": "class", "loc": {"col": 7, "file": "f1", "line": 26}, "name": "keeper", "ns": "package", "parent": "pkg", "pos": 0, "qname": "pkg::keeper", "r": "object"}
+{"detail": {"return": {"form": "void", "text": "void"}}, "flags": ["protected"], "kind": "function", "loc": {"col": 17, "file": "f1", "line": 27}, "name": "hidden", "ns": "package", "parent": "pkg::keeper", "pos": 0, "qname": "pkg::keeper::hidden", "r": "object", "sig": "function void hidden()"}
+{"detail": {"return": {"form": "void", "text": "void"}}, "kind": "function", "loc": {"col": 17, "file": "f1", "line": 34}, "name": "plain", "ns": "package", "parent": "pkg::keeper", "pos": 1, "qname": "pkg::keeper::plain", "r": "object", "sig": "function void plain()"}
+{"count": 1, "def": "open_envelope", "key": "e3b0c44298fc1c14", "r": "elab"}
+{"count": 1, "def": "partly", "key": "e3b0c44298fc1c14", "r": "elab"}
+{"elab": "open_envelope@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}
+{"elab": "partly@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}
+{"code": "Suppressed", "message": "3 non-error parser diagnostic(s) suppressed", "r": "diag", "severity": "note"}

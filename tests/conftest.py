@@ -100,3 +100,31 @@ def sv_source(tmp_path):
 
 def read_fixture(name: str) -> str:
     return (FIXTURES / name).read_text()
+
+
+# -- D2-TEST-1: doctree equivalence between the legacy index and the database ---
+#
+# With SVDB_DOCTREE_DUMP=<dir>, every test that used the ``app`` fixture leaves
+# its pickled doctrees and its warnings in <dir>/<test id>/.  Run the suite on
+# two versions of the code, each into its own <dir>, then compare them:
+# ``python -m tests.frontend.doctree_equivalence A B``.  D2 used it to show that
+# the database renders exactly what the in-memory index did.
+
+
+def pytest_runtest_teardown(item, nextitem):
+    dump = os.environ.get("SVDB_DOCTREE_DUMP")
+    app = getattr(item, "funcargs", {}).get("app") if dump else None
+    if app is None:
+        return
+    import re
+    import shutil
+
+    out = Path(dump) / re.sub(r"[^\w.-]+", "_", item.nodeid)
+    doctrees = Path(app.doctreedir)
+    if not doctrees.is_dir():
+        return
+    out.mkdir(parents=True, exist_ok=True)
+    for f in doctrees.glob("*.doctree"):
+        shutil.copy(f, out / f.name)
+    warning = getattr(app, "_warning", None)
+    (out / "warnings.txt").write_text(warning.getvalue() if warning is not None else "")

@@ -154,10 +154,10 @@ needed to make a banner-comment list render.
 
 1. **`sv_build_units` for anything configurable.** See the checklist above. A
    wrong choice here produces a doc set that looks complete and is not.
-2. **Structural and UVM views cost; declarations do not.** Nothing walks a
-   hierarchy or a `build_phase` unless a directive on some page asks for it.
-   Asking once per build is free thereafter; asking in `sv_default_options` is
-   a project-wide decision.
+2. **Structural and UVM views cost, once per source change.** The hierarchy
+   and the default testbench tree are walked when the design database is
+   built (cached in `<doctreedir>/svdb/`); a build of unchanged sources walks
+   nothing. Bound the walk with `sv_structure_tops` and the `*_max_*` limits.
 3. **Two kinds of unresolved reference.** An explicit **typed** role
    (`` :sv:class:`x` ``) that resolves to nothing **warns** — fix or qualify
    it. A reference *inferred* from a signature type, a NaturalDocs `<x>` or a

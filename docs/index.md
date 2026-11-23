@@ -25,6 +25,9 @@ usage/diagrams
 usage/whole-tree
 usage/cross-referencing
 usage/advanced
+usage/database
+usage/external
+usage/svdb-api
 ```
 
 ```{toctree}

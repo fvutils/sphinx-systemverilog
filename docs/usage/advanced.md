@@ -72,16 +72,14 @@ Measured against a synthetic design of 4680 instances:
 The gap widens with design size, because the hierarchy is what multiplies: a
 generate loop is one line of source and a thousand instances.
 
-So the hierarchy is walked **only when something asks for it**:
+So the hierarchy is walked **once per change of the sources**, when the
+[design database](database.md) is built:
 
-- Building the index never walks it, no matter how large the design.
-- The first structural directive on any page triggers the walk.
-- Every later structural directive, on any page, reuses that one walk.
-- A project that documents only classes and packages — a verification library,
-  say — never pays any of it.
-
-If no page in your project uses a structural directive, the cost is zero. You do
-not need to configure anything to get that; it is the default.
+- A build of unchanged sources reuses the cached database and walks nothing.
+- Every structural directive, on any page and in any process, reads that one
+  walk.
+- The walk is bounded by the settings below, so a pathological design costs a
+  truncated walk, not a hung build.
 
 ### When a large design is still too slow
 
@@ -102,24 +100,22 @@ pulls in the whole DUT is usually not the thing you meant to diagram.
 
 ### Incremental and parallel builds
 
-The elaborated design cannot be stored in Sphinx's cached environment, so it is
-recomputed in whichever process needs it, and only there:
+The hierarchy is walked once, while the front end builds its database (see
+[](database.md)), and stored beside it. Every process reads that copy:
 
-- On an **incremental rebuild**, unchanged pages reuse their cached doctrees, so
-  structural directives do not re-run and nothing is walked.
-- Under **parallel builds** (`-j`), each worker that renders a structural
-  directive walks independently. Workers that render none walk nothing. This is
-  a deliberate trade: sharing the elaborated design across processes would cost
-  more than recomputing it.
+- On an **incremental rebuild** of unchanged sources, the cached database is
+  reused, so nothing is parsed or walked.
+- Under **parallel builds** (`-j`), workers read the stored copy and walk
+  nothing.
 
-If a structural directive ever reports that the elaborated design is
-unavailable, a full rebuild (`sphinx-build -E`) restores it.
+A UVM directive that names its own root (`:root:`) is the exception until the
+testbench moves into the database: a process that has not parsed the sources
+parses them once to answer it.
 
 ## Performance
 
-The whole source set is parsed **once per build** into a shared index. Within a
-single process, the index is additionally cached and keyed by source-file
-modification times, so tools that rebuild repeatedly (e.g.
-`sphinx-autobuild`) re-parse only when sources actually change. As a reference
-point, the complete UVM library (~5700 documented objects) parses in a few
-seconds.
+The whole source set is parsed into a [design database](database.md), which is
+cached between builds and keyed by source-file modification times, so builds
+that repeat (`sphinx-autobuild`, CI on a docs-only change) parse only when
+sources actually change. As a reference point, the complete UVM library (~6200
+documented objects) parses and is written to the database in a few seconds.

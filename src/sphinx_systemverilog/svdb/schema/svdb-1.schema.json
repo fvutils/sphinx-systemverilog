@@ -1,0 +1,945 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dvkit.org/fvutils/sphinx-systemverilog/svdb-1.schema.json",
+  "title": "svdb interchange record, schema 1.0",
+  "description": "One line of an svdb NDJSON file. The first line of a file is a `header`; every other record may appear in any order. Normative definition: docs/design/svdb-schema-plan.md, Part A.",
+  "type": "object",
+  "required": ["r"],
+  "properties": {
+    "r": {
+      "description": "Record type.",
+      "enum": ["header", "file", "include", "unit", "diag", "import", "object", "body",
+               "elab", "top", "use",
+               "uvm.root", "uvm.type", "uvm.child", "uvm.conn", "uvm.config",
+               "uvm.override", "uvm.binding", "uvm.sequence"]
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"r": {"const": "header"}}},       "then": {"$ref": "#/$defs/rec_header"}},
+    {"if": {"properties": {"r": {"const": "file"}}},         "then": {"$ref": "#/$defs/rec_file"}},
+    {"if": {"properties": {"r": {"const": "include"}}},      "then": {"$ref": "#/$defs/rec_include"}},
+    {"if": {"properties": {"r": {"const": "unit"}}},         "then": {"$ref": "#/$defs/rec_unit"}},
+    {"if": {"properties": {"r": {"const": "diag"}}},         "then": {"$ref": "#/$defs/rec_diag"}},
+    {"if": {"properties": {"r": {"const": "import"}}},       "then": {"$ref": "#/$defs/rec_import"}},
+    {"if": {"properties": {"r": {"const": "object"}}},       "then": {"$ref": "#/$defs/rec_object"}},
+    {"if": {"properties": {"r": {"const": "body"}}},         "then": {"$ref": "#/$defs/rec_body"}},
+    {"if": {"properties": {"r": {"const": "elab"}}},         "then": {"$ref": "#/$defs/rec_elab"}},
+    {"if": {"properties": {"r": {"const": "top"}}},          "then": {"$ref": "#/$defs/rec_top"}},
+    {"if": {"properties": {"r": {"const": "use"}}},          "then": {"$ref": "#/$defs/rec_use"}},
+    {"if": {"properties": {"r": {"const": "uvm.root"}}},     "then": {"$ref": "#/$defs/rec_uvm_root"}},
+    {"if": {"properties": {"r": {"const": "uvm.type"}}},     "then": {"$ref": "#/$defs/rec_uvm_type"}},
+    {"if": {"properties": {"r": {"const": "uvm.child"}}},    "then": {"$ref": "#/$defs/rec_uvm_child"}},
+    {"if": {"properties": {"r": {"const": "uvm.conn"}}},     "then": {"$ref": "#/$defs/rec_uvm_conn"}},
+    {"if": {"properties": {"r": {"const": "uvm.config"}}},   "then": {"$ref": "#/$defs/rec_uvm_config"}},
+    {"if": {"properties": {"r": {"const": "uvm.override"}}}, "then": {"$ref": "#/$defs/rec_uvm_override"}},
+    {"if": {"properties": {"r": {"const": "uvm.binding"}}},  "then": {"$ref": "#/$defs/rec_uvm_binding"}},
+    {"if": {"properties": {"r": {"const": "uvm.sequence"}}}, "then": {"$ref": "#/$defs/rec_uvm_sequence"}}
+  ],
+
+  "$defs": {
+
+    "ns": {
+      "description": "Name space (LRM 3.13). design: modules, interfaces, programs, checkers, UDPs, configs. package: packages. unit: compilation-unit scope outside any package. macro: text macros.",
+      "enum": ["design", "package", "unit", "macro"]
+    },
+    "qname": {
+      "description": "Canonical qualified name: segments joined by '::'. An escaped identifier keeps its backslash and its terminating space. A '#<n>' suffix disambiguates generate arms and anonymous objects.",
+      "type": "string", "minLength": 1
+    },
+    "key": {
+      "description": "Text form of an object identity: a qname, optionally prefixed 'ns:' (single colon) when the qname is ambiguous across name spaces, or '$unit[<unit-id>]::<qname>' for a compilation-unit object that collides with another unit.",
+      "type": "string", "minLength": 1
+    },
+    "file_id": {"description": "Producer-local id of a `file` record.", "type": "string", "minLength": 1},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "dir": {"enum": ["input", "output", "inout", "ref"]},
+
+    "Loc": {
+      "description": "A source position. line is 1-based; col is 1-based with 0 meaning unknown.",
+      "type": "object", "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": {"$ref": "#/$defs/file_id"},
+        "line": {"type": "integer", "minimum": 1},
+        "col": {"type": "integer", "minimum": 0},
+        "end_line": {"type": "integer", "minimum": 1},
+        "end_col": {"type": "integer", "minimum": 0}
+      }
+    },
+    "Via": {
+      "description": "One step of macro expansion that produced an object, outermost first.",
+      "type": "object", "additionalProperties": false,
+      "required": ["macro"],
+      "properties": {"macro": {"type": "string"}, "loc": {"$ref": "#/$defs/Loc"}}
+    },
+    "Ref": {
+      "description": "A pointer to another object by name. `name` is as written; `target` is the canonical key, or null when the producer did not resolve it (the importer then resolves best-effort).",
+      "type": "object", "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "target": {"oneOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "ns": {"$ref": "#/$defs/ns"}
+      }
+    },
+    "Span": {
+      "description": "A Ref located within the `text` of a TypeRef or Expr: `at` is [start, end) in Unicode code points.",
+      "type": "object", "additionalProperties": false,
+      "required": ["at", "name"],
+      "properties": {
+        "at": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}], "minItems": 2, "maxItems": 2},
+        "name": {"type": "string", "minLength": 1},
+        "target": {"oneOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "ns": {"$ref": "#/$defs/ns"}
+      }
+    },
+    "TypeRef": {
+      "description": "A declared type: source text plus the names in it. Unpacked dimensions written after a declared name are appended to the text after a space: `bit [7:0] mem[4]` has type text `bit [7:0] [4]`.",
+      "type": "object", "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {"type": "string"},
+        "form": {"enum": ["builtin", "enum", "struct", "union", "class", "interface", "virtual_interface",
+                          "typedef", "type_param", "event", "string", "chandle", "void",
+                          "sequence", "property", "untyped", "unknown"]},
+        "refs": {"type": "array", "items": {"$ref": "#/$defs/Span"}},
+        "resolved": {"type": "string", "description": "Fully resolved type text, when known."}
+      }
+    },
+    "Expr": {
+      "description": "An expression: source text, the names in it, and the evaluated constant when known.",
+      "type": "object", "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {"type": "string"},
+        "refs": {"type": "array", "items": {"$ref": "#/$defs/Span"}},
+        "value": {"type": "string", "description": "Evaluated constant value, as text."}
+      }
+    },
+    "Arg": {
+      "description": "A formal argument of a subroutine, covergroup, checker, sequence, property or let.",
+      "type": "object", "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "dir": {"enum": ["input", "output", "inout", "ref", "const ref"]},
+        "type": {"$ref": "#/$defs/TypeRef"},
+        "default": {"$ref": "#/$defs/Expr"},
+        "static": {"type": "boolean", "description": "`ref static` (1800-2023)."}
+      }
+    },
+    "Attr": {
+      "description": "One (* name = value *) attribute.",
+      "type": "object", "additionalProperties": false,
+      "required": ["name"],
+      "properties": {"name": {"type": "string"}, "value": {"$ref": "#/$defs/Expr"}}
+    },
+    "Doc": {
+      "description": "Raw documentation comment, uninterpreted. Readers parse it according to `style`.",
+      "type": "object", "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {"type": "string"},
+        "style": {"enum": ["native", "naturaldocs", "doxygen", "plain"]},
+        "loc": {"$ref": "#/$defs/Loc"},
+        "group": {"type": "string", "description": "Documentation group heading the object falls under."}
+      }
+    },
+    "section_status": {"enum": ["complete", "partial", "absent"]},
+
+    "rec_header": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "format", "schema", "producer"],
+      "properties": {
+        "r": {"const": "header"},
+        "format": {"const": "svdb"},
+        "schema": {"type": "string", "pattern": "^1\\.[0-9]+$", "description": "MAJOR.MINOR of the schema this file was written against."},
+        "producer": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name"],
+          "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "frontend": {"type": "string"}}
+        },
+        "created": {"type": "string", "format": "date-time"},
+        "role": {"enum": ["local", "external"], "default": "local"},
+        "origin": {"type": "string", "description": "Label for this database (library or project name)."},
+        "path_root": {"type": "string", "description": "Base that relative file paths resolve against."},
+        "inputs": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "defines": {"type": "object", "additionalProperties": {"type": "string"}},
+            "include_dirs": {"type": "array", "items": {"type": "string"}},
+            "tops": {"type": "array", "items": {"type": "string"}},
+            "doc_style": {"type": "string"},
+            "uvm_root": {"type": "string"}
+          }
+        },
+        "docs": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "base_url": {"type": "string"},
+            "inventory": {"type": "string"},
+            "url_template": {"type": "string", "description": "Placeholders: {kind} {qname} {name} {anchor}."}
+          }
+        },
+        "sections": {
+          "type": "object",
+          "propertyNames": {"enum": ["files", "sources", "objects", "docs", "bodies", "anonymous",
+                                     "structure", "structure.gates", "connections", "elaboration", "uses",
+                                     "uvm.tree", "uvm.config", "uvm.overrides", "uvm.bindings",
+                                     "uvm.sequences", "diagnostics"]},
+          "additionalProperties": {"$ref": "#/$defs/section_status"}
+        }
+      }
+    },
+
+    "rec_file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "id", "path"],
+      "properties": {
+        "r": {"const": "file"},
+        "id": {"$ref": "#/$defs/file_id"},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "size": {"type": "integer", "minimum": 0},
+        "lang": {"enum": ["sv", "svh", "v", "vh", "other"]},
+        "protected": {
+          "description": "Encrypted envelope regions (LRM 34) as [start_line, end_line] pairs.",
+          "type": "array",
+          "items": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}], "minItems": 2, "maxItems": 2}
+        },
+        "text": {"type": "string", "description": "Embedded source text (`sources` section only)."}
+      }
+    },
+    "rec_include": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "from", "to"],
+      "properties": {
+        "r": {"const": "include"},
+        "from": {"$ref": "#/$defs/file_id"},
+        "to": {"$ref": "#/$defs/file_id"},
+        "line": {"type": "integer", "minimum": 1}
+      }
+    },
+    "rec_unit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "id"],
+      "properties": {
+        "r": {"const": "unit"},
+        "id": {"type": "string", "minLength": 1},
+        "files": {"type": "array", "items": {"$ref": "#/$defs/file_id"}},
+        "defines": {"type": "object", "additionalProperties": {"type": "string"}},
+        "default_nettype": {"type": "string"},
+        "timescale": {"type": "string"}
+      }
+    },
+    "rec_diag": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "severity", "message"],
+      "properties": {
+        "r": {"const": "diag"},
+        "severity": {"enum": ["error", "warning", "note"]},
+        "code": {"type": "string"},
+        "message": {"type": "string"},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_import": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "scope", "package", "item"],
+      "properties": {
+        "r": {"const": "import"},
+        "scope": {"$ref": "#/$defs/key"},
+        "package": {"$ref": "#/$defs/Ref"},
+        "item": {"type": "string", "minLength": 1, "description": "'*' for a wildcard import, else the imported name."},
+        "export": {"type": "boolean", "default": false},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "of", "text"],
+      "properties": {
+        "r": {"const": "body"},
+        "of": {"$ref": "#/$defs/key"},
+        "text": {"type": "string"}
+      }
+    },
+    "rec_use": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "from", "to", "kind"],
+      "properties": {
+        "r": {"const": "use"},
+        "from": {"$ref": "#/$defs/key"},
+        "to": {"$ref": "#/$defs/Ref"},
+        "kind": {"enum": ["type", "call", "extends", "implements", "instantiates", "import", "macro", "hier", "config", "other"]},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+
+    "kind": {
+      "enum": ["package", "module", "interface", "program", "checker", "primitive", "config",
+               "class", "constraint",
+               "parameter", "port", "net", "variable", "typedef", "enum_member", "field", "nettype",
+               "function", "task",
+               "modport", "clocking", "clockvar",
+               "instance", "generate", "genvar", "defparam", "process", "block",
+               "sequence", "sva_property", "let", "assertion",
+               "covergroup", "coverpoint", "cross", "bins",
+               "macro"]
+    },
+    "qual": {
+      "enum": ["static", "automatic", "local", "protected", "virtual", "pure", "extern", "const",
+               "rand", "randc", "var", "initial", "extends", "final", "forkjoin", "context"]
+    },
+    "flag": {
+      "enum": ["external", "protected", "implicit", "anonymous", "forward", "macro_generated", "extern_only"]
+    },
+
+    "rec_object": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "kind", "ns", "qname", "name", "pos"],
+      "properties": {
+        "r": {"const": "object"},
+        "kind": {"$ref": "#/$defs/kind"},
+        "ns": {"$ref": "#/$defs/ns"},
+        "unit": {"type": "string", "minLength": 1, "description": "Compilation-unit id; required when ns is 'unit'."},
+        "qname": {"$ref": "#/$defs/qname"},
+        "name": {"type": "string", "minLength": 1},
+        "parent": {"$ref": "#/$defs/qname", "description": "qname of the structural parent, in the same ns and unit. Absent for roots."},
+        "scope": {"$ref": "#/$defs/qname", "description": "Lookup scope when it differs from parent (enum literals)."},
+        "pos": {"type": "integer", "minimum": 0, "description": "0-based source order among siblings."},
+        "loc": {"$ref": "#/$defs/Loc"},
+        "extent": {"$ref": "#/$defs/Loc"},
+        "body_loc": {"$ref": "#/$defs/Loc", "description": "Out-of-block definition of an extern method or constraint."},
+        "via": {"type": "array", "items": {"$ref": "#/$defs/Via"}},
+        "sig": {"type": "string", "description": "Display signature as the producer would render it."},
+        "quals": {"type": "array", "items": {"$ref": "#/$defs/qual"}, "uniqueItems": true},
+        "attrs": {"type": "array", "items": {"$ref": "#/$defs/Attr"}},
+        "doc": {"$ref": "#/$defs/Doc"},
+        "flags": {"type": "array", "items": {"$ref": "#/$defs/flag"}, "uniqueItems": true},
+        "origin": {"type": "string"},
+        "url": {"type": "string"},
+        "hash": {"$ref": "#/$defs/hash"},
+        "detail": {"type": "object"}
+      },
+      "allOf": [
+        {"if": {"properties": {"ns": {"const": "unit"}}}, "then": {"required": ["unit"]}, "else": {"not": {"required": ["unit"]}}},
+        {"if": {"properties": {"kind": {"const": "package"}}},      "then": {"properties": {"ns": {"const": "package"}, "detail": {"$ref": "#/$defs/d_package"}}}},
+        {"if": {"properties": {"kind": {"enum": ["module", "interface", "program"]}}}, "then": {"properties": {"detail": {"$ref": "#/$defs/d_definition"}}}},
+        {"if": {"properties": {"kind": {"const": "checker"}}},      "then": {"properties": {"detail": {"$ref": "#/$defs/d_checker"}}}},
+        {"if": {"properties": {"kind": {"const": "primitive"}}},    "then": {"properties": {"ns": {"const": "design"}, "detail": {"$ref": "#/$defs/d_primitive"}}}},
+        {"if": {"properties": {"kind": {"const": "config"}}},       "then": {"properties": {"ns": {"const": "design"}, "detail": {"$ref": "#/$defs/d_config"}}}},
+        {"if": {"properties": {"kind": {"const": "class"}}},        "then": {"properties": {"detail": {"$ref": "#/$defs/d_class"}}}},
+        {"if": {"properties": {"kind": {"const": "constraint"}}},   "then": {"properties": {"detail": {"$ref": "#/$defs/d_constraint"}}}},
+        {"if": {"properties": {"kind": {"const": "parameter"}}},    "then": {"properties": {"detail": {"$ref": "#/$defs/d_parameter"}}}},
+        {"if": {"properties": {"kind": {"const": "port"}}},         "then": {"properties": {"detail": {"$ref": "#/$defs/d_port"}}}},
+        {"if": {"properties": {"kind": {"const": "net"}}},          "then": {"properties": {"detail": {"$ref": "#/$defs/d_net"}}}},
+        {"if": {"properties": {"kind": {"const": "variable"}}},     "then": {"properties": {"detail": {"$ref": "#/$defs/d_variable"}}}},
+        {"if": {"properties": {"kind": {"const": "typedef"}}},      "then": {"properties": {"detail": {"$ref": "#/$defs/d_typedef"}}}},
+        {"if": {"properties": {"kind": {"const": "enum_member"}}},  "then": {"properties": {"detail": {"$ref": "#/$defs/d_enum_member"}}}},
+        {"if": {"properties": {"kind": {"const": "field"}}},        "then": {"properties": {"detail": {"$ref": "#/$defs/d_field"}}}},
+        {"if": {"properties": {"kind": {"const": "nettype"}}},      "then": {"properties": {"detail": {"$ref": "#/$defs/d_nettype"}}}},
+        {"if": {"properties": {"kind": {"const": "function"}}},     "then": {"properties": {"detail": {"$ref": "#/$defs/d_function"}}}},
+        {"if": {"properties": {"kind": {"const": "task"}}},         "then": {"properties": {"detail": {"$ref": "#/$defs/d_task"}}}},
+        {"if": {"properties": {"kind": {"const": "modport"}}},      "then": {"properties": {"detail": {"$ref": "#/$defs/d_modport"}}}},
+        {"if": {"properties": {"kind": {"const": "clocking"}}},     "then": {"properties": {"detail": {"$ref": "#/$defs/d_clocking"}}}},
+        {"if": {"properties": {"kind": {"const": "clockvar"}}},     "then": {"properties": {"detail": {"$ref": "#/$defs/d_clockvar"}}}},
+        {"if": {"properties": {"kind": {"const": "instance"}}},     "then": {"required": ["detail"], "properties": {"detail": {"$ref": "#/$defs/d_instance"}}}},
+        {"if": {"properties": {"kind": {"const": "generate"}}},     "then": {"required": ["detail"], "properties": {"detail": {"$ref": "#/$defs/d_generate"}}}},
+        {"if": {"properties": {"kind": {"const": "genvar"}}},       "then": {"properties": {"detail": {"$ref": "#/$defs/d_empty"}}}},
+        {"if": {"properties": {"kind": {"const": "defparam"}}},     "then": {"properties": {"detail": {"$ref": "#/$defs/d_defparam"}}}},
+        {"if": {"properties": {"kind": {"const": "process"}}},      "then": {"required": ["detail"], "properties": {"detail": {"$ref": "#/$defs/d_process"}}}},
+        {"if": {"properties": {"kind": {"const": "block"}}},        "then": {"properties": {"detail": {"$ref": "#/$defs/d_block"}}}},
+        {"if": {"properties": {"kind": {"enum": ["sequence", "sva_property"]}}}, "then": {"properties": {"detail": {"$ref": "#/$defs/d_sva_decl"}}}},
+        {"if": {"properties": {"kind": {"const": "let"}}},          "then": {"properties": {"detail": {"$ref": "#/$defs/d_let"}}}},
+        {"if": {"properties": {"kind": {"const": "assertion"}}},    "then": {"required": ["detail"], "properties": {"detail": {"$ref": "#/$defs/d_assertion"}}}},
+        {"if": {"properties": {"kind": {"const": "covergroup"}}},   "then": {"properties": {"detail": {"$ref": "#/$defs/d_covergroup"}}}},
+        {"if": {"properties": {"kind": {"const": "coverpoint"}}},   "then": {"properties": {"detail": {"$ref": "#/$defs/d_coverpoint"}}}},
+        {"if": {"properties": {"kind": {"const": "cross"}}},        "then": {"properties": {"detail": {"$ref": "#/$defs/d_cross"}}}},
+        {"if": {"properties": {"kind": {"const": "bins"}}},         "then": {"properties": {"detail": {"$ref": "#/$defs/d_bins"}}}},
+        {"if": {"properties": {"kind": {"const": "macro"}}},        "then": {"properties": {"ns": {"const": "macro"}, "detail": {"$ref": "#/$defs/d_macro"}}}},
+        {"if": {"properties": {"kind": {"enum": ["module", "interface", "program"]}}}, "then": {"properties": {"ns": {"const": "design"}}}},
+        {"if": {"properties": {"ns": {"const": "design"}}, "not": {"required": ["parent"]}}, "then": {"properties": {"kind": {"enum": ["module", "interface", "program", "checker", "primitive", "config"]}}}},
+        {"if": {"properties": {"ns": {"const": "macro"}}},          "then": {"properties": {"kind": {"const": "macro"}}}},
+        {"if": {"properties": {"ns": {"const": "package"}}, "not": {"required": ["parent"]}}, "then": {"properties": {"kind": {"const": "package"}}}}
+      ]
+    },
+
+    "d_empty": {"type": "object", "additionalProperties": false},
+    "d_package": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "lifetime": {"enum": ["static", "automatic"]},
+        "timeunit": {"type": "string"}, "timeprecision": {"type": "string"}
+      }
+    },
+    "d_definition": {
+      "description": "module, interface, program.",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "macromodule": {"type": "boolean"},
+        "ansi": {"type": "boolean"},
+        "lifetime": {"enum": ["static", "automatic"]},
+        "timeunit": {"type": "string"}, "timeprecision": {"type": "string"},
+        "default_clocking": {"$ref": "#/$defs/Ref"},
+        "default_disable_iff": {"$ref": "#/$defs/Expr"},
+        "cell_define": {"type": "boolean"}
+      }
+    },
+    "d_checker": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}},
+        "default_clocking": {"$ref": "#/$defs/Ref"},
+        "default_disable_iff": {"$ref": "#/$defs/Expr"}
+      }
+    },
+    "d_primitive": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"sequential": {"type": "boolean"}, "initial": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_config": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "design": {"type": "array", "items": {"$ref": "#/$defs/Ref"}},
+        "rules": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "d_class": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "interface_class": {"type": "boolean"},
+        "parameterized": {"type": "boolean", "description": "Declared with a parameter port list #(...) (LRM 8.25)."},
+        "virtual": {"type": "boolean"},
+        "final": {"type": "boolean"},
+        "extends": {"$ref": "#/$defs/TypeRef"},
+        "extends_args": {"type": "array", "items": {"$ref": "#/$defs/Expr"}},
+        "implements": {"type": "array", "items": {"$ref": "#/$defs/TypeRef"}}
+      }
+    },
+    "d_constraint": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"prototype": {"type": "boolean", "description": "Declared without a body (extern or pure)."}}
+    },
+    "d_parameter": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "local": {"type": "boolean"},
+        "type_param": {"type": "boolean"},
+        "spec": {"type": "boolean", "description": "specparam"},
+        "port_list": {"type": "boolean", "description": "Declared in the #( ... ) parameter port list."},
+        "type": {"$ref": "#/$defs/TypeRef"},
+        "default": {"$ref": "#/$defs/Expr"},
+        "default_type": {"$ref": "#/$defs/TypeRef"}
+      }
+    },
+    "d_port": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "dir": {"$ref": "#/$defs/dir"},
+        "net_type": {"type": "string", "description": "wire, tri, ..., or 'var' for a variable port."},
+        "type": {"$ref": "#/$defs/TypeRef"},
+        "default": {"$ref": "#/$defs/Expr"},
+        "interface": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "ref": {"$ref": "#/$defs/Ref"},
+            "modport": {"type": "string"},
+            "generic": {"type": "boolean"}
+          }
+        },
+        "explicit": {"$ref": "#/$defs/Expr", "description": "Port expression of an explicitly named port: .a({b,c})."},
+        "ansi": {"type": "boolean"}
+      }
+    },
+    "d_net": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "net_type": {"type": "string", "description": "wire, tri, wand, wor, triand, trior, tri0, tri1, trireg, uwire, supply0, supply1, interconnect, or a user nettype name."},
+        "nettype": {"$ref": "#/$defs/Ref"},
+        "type": {"$ref": "#/$defs/TypeRef"},
+        "init": {"$ref": "#/$defs/Expr"},
+        "strength": {"type": "string"},
+        "delay": {"$ref": "#/$defs/Expr"},
+        "split": {"enum": ["vectored", "scalared"]}
+      }
+    },
+    "d_variable": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"type": {"$ref": "#/$defs/TypeRef"}, "init": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_typedef": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "type": {"$ref": "#/$defs/TypeRef"},
+        "form": {"enum": ["alias", "enum", "struct", "union", "interface_based", "forward"]},
+        "base": {"$ref": "#/$defs/TypeRef"},
+        "packed": {"type": "boolean"},
+        "signed": {"type": "boolean"},
+        "tagged": {"type": "boolean"},
+        "soft": {"type": "boolean"}
+      }
+    },
+    "d_enum_member": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "value": {"$ref": "#/$defs/Expr", "description": "As written; `text` is empty when the value is implicit, and `value` holds the evaluated literal."},
+        "generated_from": {"type": "string", "description": "The range form this literal expanded from, e.g. 'RED[3]'."}
+      }
+    },
+    "d_field": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"type": {"$ref": "#/$defs/TypeRef"}, "default": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_nettype": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"type": {"$ref": "#/$defs/TypeRef"}, "resolve": {"$ref": "#/$defs/Ref"}}
+    },
+    "dpi": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dir"],
+      "properties": {
+        "dir": {"enum": ["import", "export"]},
+        "spec": {"enum": ["DPI-C", "DPI"]},
+        "c_name": {"type": "string"},
+        "pure": {"type": "boolean"},
+        "context": {"type": "boolean"}
+      }
+    },
+    "d_function": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "return": {"$ref": "#/$defs/TypeRef"},
+        "args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}},
+        "constructor": {"type": "boolean"},
+        "dpi": {"$ref": "#/$defs/dpi"},
+        "prototype_only": {"type": "boolean"}
+      }
+    },
+    "d_task": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}},
+        "dpi": {"$ref": "#/$defs/dpi"},
+        "prototype_only": {"type": "boolean"}
+      }
+    },
+    "d_modport": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name"],
+            "properties": {"name": {"type": "string"}, "dir": {"$ref": "#/$defs/dir"}, "expr": {"$ref": "#/$defs/Expr"}}
+          }
+        },
+        "imports": {"$ref": "#/$defs/modport_tf"},
+        "exports": {"$ref": "#/$defs/modport_tf"},
+        "clocking": {"type": "array", "items": {"$ref": "#/$defs/Ref"}}
+      }
+    },
+    "modport_tf": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name"],
+        "properties": {"name": {"type": "string"}, "proto": {"type": "string", "description": "Prototype text when one is given."}}
+      }
+    },
+    "d_clocking": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "event": {"$ref": "#/$defs/Expr"},
+        "default_input": {"type": "string", "description": "Default input skew text."},
+        "default_output": {"type": "string", "description": "Default output skew text."},
+        "default": {"type": "boolean"},
+        "global": {"type": "boolean"}
+      }
+    },
+    "d_clockvar": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "dir": {"enum": ["input", "output", "inout"]},
+        "input_skew": {"type": "string"},
+        "output_skew": {"type": "string"},
+        "expr": {"$ref": "#/$defs/Expr", "description": "Hierarchical expression, when the clockvar is an alias."}
+      }
+    },
+    "d_instance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["of"],
+      "properties": {
+        "of": {"$ref": "#/$defs/Ref"},
+        "of_kind": {"enum": ["module", "interface", "program", "checker", "primitive", "gate", "unknown"]},
+        "state": {"enum": ["ok", "external", "opaque", "unresolved"], "default": "ok"},
+        "array": {
+          "type": "object", "additionalProperties": false,
+          "properties": {"dims": {"type": "string"}, "count": {"type": ["integer", "null"], "minimum": 0}}
+        },
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["pos", "mode"],
+            "properties": {
+              "name": {"type": ["string", "null"]},
+              "pos": {"type": "integer", "minimum": 0},
+              "mode": {"enum": ["named", "positional"]},
+              "value": {"$ref": "#/$defs/Expr"},
+              "type": {"$ref": "#/$defs/TypeRef"}
+            }
+          }
+        },
+        "conns": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["pos", "mode"],
+            "properties": {
+              "port": {"type": ["string", "null"]},
+              "pos": {"type": "integer", "minimum": 0},
+              "mode": {"enum": ["named", "implicit", "wildcard", "positional", "unconnected"]},
+              "dir": {"oneOf": [{"$ref": "#/$defs/dir"}, {"type": "null"}]},
+              "expr": {"$ref": "#/$defs/Expr"}
+            }
+          }
+        },
+        "bind": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["from"],
+              "properties": {
+                "from": {"$ref": "#/$defs/key", "description": "Scope that contains the bind directive."},
+                "target_def": {"$ref": "#/$defs/Ref"},
+                "target_insts": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "d_generate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["construct"],
+      "properties": {
+        "construct": {"enum": ["for", "if", "case", "block"]},
+        "arm": {"type": "integer", "minimum": 0, "description": "Arm index within an if/case construct."},
+        "hier_name": {"type": "string", "description": "The LRM hierarchical name (label or genblk<n>) when it differs from `name`."},
+        "genvar": {"$ref": "#/$defs/Ref"},
+        "loop": {
+          "type": "object", "additionalProperties": false,
+          "properties": {"init": {"$ref": "#/$defs/Expr"}, "cond": {"$ref": "#/$defs/Expr"}, "step": {"$ref": "#/$defs/Expr"}}
+        },
+        "cond": {"$ref": "#/$defs/Expr", "description": "if condition, or case selector."},
+        "case_items": {"type": "array", "items": {"$ref": "#/$defs/Expr"}, "description": "Case item expressions selecting this arm; empty for default."}
+      }
+    },
+    "d_defparam": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"target": {"type": "string"}, "value": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_process": {
+      "type": "object", "additionalProperties": false,
+      "required": ["proc"],
+      "properties": {
+        "proc": {"enum": ["initial", "final", "always", "always_ff", "always_comb", "always_latch"]},
+        "event": {"$ref": "#/$defs/Expr"}
+      }
+    },
+    "d_block": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"fork": {"enum": ["join", "join_any", "join_none"]}}
+    },
+    "d_sva_decl": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}}, "body": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_let": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}}, "expr": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_assertion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verb", "form"],
+      "properties": {
+        "verb": {"enum": ["assert", "assume", "cover", "restrict", "expect"]},
+        "form": {"enum": ["immediate", "deferred_0", "deferred_final", "concurrent"]},
+        "property": {"oneOf": [{"$ref": "#/$defs/Ref"}, {"$ref": "#/$defs/Expr"}]},
+        "clock": {"$ref": "#/$defs/Expr"},
+        "disable_iff": {"$ref": "#/$defs/Expr"}
+      }
+    },
+    "d_covergroup": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}},
+        "event": {"$ref": "#/$defs/Expr"},
+        "sample_args": {"type": "array", "items": {"$ref": "#/$defs/Arg"}},
+        "extends": {"$ref": "#/$defs/Ref"}
+      }
+    },
+    "d_coverpoint": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"expr": {"$ref": "#/$defs/Expr"}, "iff": {"$ref": "#/$defs/Expr"}, "type": {"$ref": "#/$defs/TypeRef"}}
+    },
+    "d_cross": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"items": {"type": "array", "items": {"$ref": "#/$defs/Ref"}}, "iff": {"$ref": "#/$defs/Expr"}}
+    },
+    "d_bins": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bin_kind"],
+      "properties": {
+        "bin_kind": {"enum": ["bins", "illegal_bins", "ignore_bins"]},
+        "wildcard": {"type": "boolean"},
+        "array": {"type": "boolean"},
+        "size": {"$ref": "#/$defs/Expr"},
+        "values": {"type": "string"},
+        "transition": {"type": "boolean"},
+        "default": {"type": "boolean"},
+        "with": {"$ref": "#/$defs/Expr"},
+        "iff": {"$ref": "#/$defs/Expr"}
+      }
+    },
+    "d_macro": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name"],
+            "properties": {"name": {"type": "string"}, "default": {"type": "string"}}
+          }
+        },
+        "redefined_at": {"type": "array", "items": {"$ref": "#/$defs/Loc"}}
+      }
+    },
+
+    "rec_elab": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "def", "key"],
+      "properties": {
+        "r": {"const": "elab"},
+        "def": {"$ref": "#/$defs/key"},
+        "key": {"type": "string", "pattern": "^[0-9a-f]{16}$", "description": "Elaboration key: see canonicalization in the format docs."},
+        "count": {"type": "integer", "minimum": 0},
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "value"],
+            "properties": {
+              "name": {"type": "string"},
+              "value": {"type": "string", "description": "Full value text; the identity."},
+              "display": {"type": "string", "description": "What a reader should see."},
+              "type": {"type": "string"}
+            }
+          }
+        },
+        "sites": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["inst"],
+            "properties": {
+              "inst": {"$ref": "#/$defs/qname"},
+              "present": {"type": "boolean", "default": true},
+              "count": {"type": "integer", "minimum": 0},
+              "elab": {"type": "string", "description": "Child elaboration as '<def key>@<elab key>'."}
+            }
+          }
+        },
+        "generate": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["block"],
+            "properties": {
+              "block": {"$ref": "#/$defs/qname"},
+              "taken": {"type": "boolean"},
+              "iterations": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "truncated": {"type": "boolean"}
+      }
+    },
+    "rec_top": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "elab"],
+      "properties": {
+        "r": {"const": "top"},
+        "elab": {"type": "string", "description": "'<def key>@<elab key>'."},
+        "origin": {"enum": ["configured", "inferred"]}
+      }
+    },
+
+    "uvm_link": {"enum": ["analysis", "seq_item", "tlm", "handle"]},
+    "uvm_state": {"enum": ["ok", "opaque", "unresolved"]},
+    "rec_uvm_root": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "root"],
+      "properties": {
+        "r": {"const": "uvm.root"},
+        "root": {"$ref": "#/$defs/Ref"},
+        "root_origin": {"type": "string"},
+        "root_candidates": {"type": "array", "items": {"type": "string"}},
+        "component_count": {"type": "integer", "minimum": 0},
+        "truncated": {"type": "boolean"}
+      }
+    },
+    "rec_uvm_type": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "type"],
+      "properties": {
+        "r": {"const": "uvm.type"},
+        "type": {"$ref": "#/$defs/Ref"},
+        "chain": {"type": "array", "items": {"type": "string"}, "description": "Base chain, outermost first."},
+        "kind": {"enum": ["component", "port"]},
+        "tier": {"type": "string", "description": "sequencer, driver, monitor, agent, env, test, analysis, or empty."},
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {"type": "string"},
+              "type": {"$ref": "#/$defs/Ref"},
+              "role": {"enum": ["port", "export", "imp"]},
+              "link": {"$ref": "#/$defs/uvm_link"},
+              "declared_by": {"type": "string"}
+            }
+          }
+        },
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_uvm_child": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "owner", "handle", "type"],
+      "properties": {
+        "r": {"const": "uvm.child"},
+        "owner": {"$ref": "#/$defs/Ref", "description": "Type whose build_phase creates the child."},
+        "handle": {"type": "string"},
+        "inst_name": {"type": ["string", "null"]},
+        "type": {"$ref": "#/$defs/Ref"},
+        "created_by": {"enum": ["factory", "new"]},
+        "conditional": {"type": "boolean"},
+        "multiplicity": {"type": "string"},
+        "state": {"$ref": "#/$defs/uvm_state"},
+        "kind": {"enum": ["component", "port"]},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "uvm_endpoint": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "path": {"type": "array", "items": {"type": "string"}},
+        "port": {"type": "string"},
+        "type": {"$ref": "#/$defs/Ref"},
+        "component": {"type": "boolean"},
+        "link": {"$ref": "#/$defs/uvm_link"}
+      }
+    },
+    "rec_uvm_conn": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "owner", "source", "target"],
+      "properties": {
+        "r": {"const": "uvm.conn"},
+        "owner": {"$ref": "#/$defs/Ref"},
+        "source": {"$ref": "#/$defs/uvm_endpoint"},
+        "target": {"$ref": "#/$defs/uvm_endpoint"},
+        "kind": {"$ref": "#/$defs/uvm_link"},
+        "conditional": {"type": "boolean"},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_uvm_config": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "id", "action", "owner"],
+      "properties": {
+        "r": {"const": "uvm.config"},
+        "id": {"type": "string", "description": "Producer-local id, referenced by uvm.binding."},
+        "action": {"enum": ["set", "get"]},
+        "type": {"type": "string", "description": "The T of uvm_config_db#(T), as written."},
+        "owner": {"$ref": "#/$defs/Ref"},
+        "method": {"type": "string"},
+        "cntxt": {"type": "string"},
+        "scope": {"type": ["string", "null"]},
+        "field": {"type": ["string", "null"]},
+        "value": {"type": "string"},
+        "virtual_interface": {"type": "boolean"},
+        "value_path": {"type": "string"},
+        "conditional": {"type": "boolean"},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_uvm_override": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "original", "replacement"],
+      "properties": {
+        "r": {"const": "uvm.override"},
+        "original": {"$ref": "#/$defs/Ref"},
+        "replacement": {"$ref": "#/$defs/Ref"},
+        "kind": {"enum": ["type", "inst"]},
+        "inst_path": {"type": ["string", "null"]},
+        "owner": {"$ref": "#/$defs/Ref"},
+        "method": {"type": "string"},
+        "conditional": {"type": "boolean"},
+        "unknown": {"type": "array", "items": {"type": "string"}},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_uvm_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "interface_type", "set"],
+      "properties": {
+        "r": {"const": "uvm.binding"},
+        "interface_type": {"$ref": "#/$defs/Ref"},
+        "field": {"type": ["string", "null"]},
+        "set": {"type": "string", "description": "id of the uvm.config `set` record."},
+        "instance_path": {"type": "string"},
+        "drivers": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"path": {"type": "string"}, "type": {"$ref": "#/$defs/Ref"}, "port": {"type": "string"}}
+          }
+        },
+        "consumers": {"type": "array", "items": {"type": "string"}, "description": "ids of uvm.config `get` records."}
+      }
+    },
+    "uvm_activity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["action", "sequence", "item", "decision", "branch", "fork", "loop", "delay"]},
+        "label": {"type": "string"},
+        "type": {"$ref": "#/$defs/Ref"},
+        "join": {"type": "string"},
+        "macro": {"type": "string"},
+        "children": {"type": "array", "items": {"$ref": "#/$defs/uvm_activity"}},
+        "loc": {"$ref": "#/$defs/Loc"}
+      }
+    },
+    "rec_uvm_sequence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "type"],
+      "properties": {
+        "r": {"const": "uvm.sequence"},
+        "type": {"$ref": "#/$defs/Ref"},
+        "chain": {"type": "array", "items": {"type": "string"}},
+        "body": {"type": "array", "items": {"$ref": "#/$defs/uvm_activity"}},
+        "declared_by": {"type": "string"},
+        "overridden": {"type": "boolean"},
+        "other": {"type": "integer", "minimum": 0},
+        "macros": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

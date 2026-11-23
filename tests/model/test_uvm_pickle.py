@@ -1,15 +1,9 @@
-"""U0-TEST-3: the UVM provider must never reach Sphinx's pickle either.
+"""U0-TEST-3, as D2-IMPL-4 changed it: the UVM views survive Sphinx's pickle.
 
-This is the same failure mode ``test_structure_pickle.py`` guards for the RTL
-provider, and it is worth guarding twice because the consequence is
-disproportionate: the index lives on ``env``, Sphinx pickles ``env``, and a
-pyslang ``Compilation`` raises ``TypeError: cannot pickle``.  A second provider
-left in place would break *every* build --- including projects that never write
-a UVM directive.
-
-Landing this before the extraction logic (U1) is deliberate.  A test that only
-appears once there is something to extract is a test written after the trap has
-already been sprung.
+The same contract as ``test_structure_pickle.py``, for the testbench: what
+takes no argument (the default tree, config_db, overrides, bindings, the class
+names) comes back from the snapshot without parsing; a tree under another root
+is answered by parsing once in that process.
 """
 
 from __future__ import annotations
@@ -18,37 +12,47 @@ import pickle
 
 import pytest
 
-from tests.conftest import uvm_stub_index
+from sphinx_systemverilog.frontend import build
+from sphinx_systemverilog.frontend.build import Options, open_index
+from sphinx_systemverilog.model.index import clear_index_cache
+from tests.conftest import UVM_STUB, UVM_TB, uvm_stub_index
 
 pytestmark = pytest.mark.unit
 
 
-def test_index_with_live_uvm_provider_pickles():
-    index = uvm_stub_index("basic_tb.sv")
-    assert index.uvm_provider is not None
+def _options(*tb_files):
+    return Options.make(
+        source_dirs=[str(UVM_STUB)],
+        build_units=[str(UVM_STUB / "mini_uvm.sv"), *(str(UVM_TB / n) for n in tb_files)],
+        include_dirs=[str(UVM_STUB)],
+    )
+
+
+def test_unpickled_index_answers_from_the_snapshot(tmp_path, monkeypatch):
+    index = open_index(_options("basic_tb.sv"), cache_dir=str(tmp_path))
+    provider = index.uvm_provider
+    tree, config = provider.get(), provider.config()
+
+    clear_index_cache()
+    monkeypatch.setattr(build, "parse", lambda options: (_ for _ in ()).throw(AssertionError("parsed")))
+    restored = pickle.loads(pickle.dumps(index))
+
+    assert restored.uvm_structure.root == tree.root
+    assert restored.uvm_structure.children == tree.children
+    assert restored.uvm_provider.config().accesses == config.accesses
+    assert restored.uvm_provider.overrides() == provider.overrides()
+    assert restored.uvm_provider.knows("my_agent")
+    assert not restored.uvm_provider.knows("no_such_class")
+
+
+def test_another_root_parses_once_in_that_process(tmp_path):
+    index = open_index(_options("basic_tb.sv"), cache_dir=str(tmp_path))
+    expected = index.uvm_provider.get("my_agent")
+    clear_index_cache()
 
     restored = pickle.loads(pickle.dumps(index))
 
-    assert restored.uvm_provider is None
-    assert len(restored) == len(index)
-
-
-def test_index_pickles_after_extraction():
-    """A memoized UvmStructure must not keep the compilation alive either."""
-    index = uvm_stub_index("basic_tb.sv")
-    assert index.uvm_structure is not None
-
-    restored = pickle.loads(pickle.dumps(index))
-
-    assert restored.uvm_provider is None
-
-
-def test_unpickled_index_degrades_instead_of_crashing():
-    """No provider means no structure, not an exception."""
-    index = uvm_stub_index("basic_tb.sv")
-    restored = pickle.loads(pickle.dumps(index))
-
-    assert restored.uvm_structure is None
+    assert restored.uvm_provider.get("my_agent").children == expected.children
 
 
 def test_uvm_structure_is_picklable_on_its_own():
@@ -59,20 +63,3 @@ def test_uvm_structure_is_picklable_on_its_own():
 
     assert restored.root == structure.root
     assert restored.children == structure.children
-
-
-def test_both_providers_are_dropped_together():
-    """The RTL provider must not be resurrected by the UVM one, or vice versa.
-
-    Guards the shape of ``__getstate__`` rather than one of its entries: the
-    realistic regression is adding a third provider and updating only the
-    attribute that happened to be under test.
-    """
-    index = uvm_stub_index("basic_tb.sv")
-    assert index.structure_provider is not None
-    assert index.uvm_provider is not None
-
-    restored = pickle.loads(pickle.dumps(index))
-
-    assert restored.structure_provider is None
-    assert restored.uvm_provider is None

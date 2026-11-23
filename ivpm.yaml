@@ -21,6 +21,9 @@ package:
     # Test helper: HTML assertions in sphinx integration tests.
     - name: beautifulsoup4
       src: pypi
+    # svdb: JSON Schema validation of interchange files (tests, `svdb validate`).
+    - name: jsonschema
+      src: pypi
     - name: uvm
       url: https://www.accellera.org/images/downloads/standards/uvm/UVM-1800.2-2020.3.1.tar.gz
 

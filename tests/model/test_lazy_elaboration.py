@@ -8,11 +8,15 @@ rendered a structural directive.
 
 Two properties are asserted, and both matter:
 
-* a project with no structural directive never walks the hierarchy at all;
-* a project with one --- or ten, across several pages --- walks it exactly once.
+* :func:`build_index` never walks the hierarchy on its own;
+* a project with one structural directive --- or ten, across several pages ---
+  walks it exactly once.
 
-Anything that reintroduces an eager walk breaks this test rather than quietly
-costing every user a few seconds per build.
+Since the svdb database (plan D2-IMPL-3) the Sphinx build walks it once *while
+building the database*, so that every process (parallel readers, later
+incremental builds) can render structure without the live compilation.  That
+walk is paid once per change of the sources, not once per build: a build over
+the cached database parses and walks nothing (``tests/frontend``).
 """
 
 from __future__ import annotations
@@ -57,14 +61,14 @@ def test_walk_happens_once_and_is_memoized():
 @pytest.mark.sphinx(
     "html", testroot="nostructure", srcdir="lazy-none", confoverrides=CONF
 )
-def test_no_structural_directive_no_walk(app):
-    """A full build of module docs with no structural directive walks nothing."""
+def test_no_structural_directive_no_extra_walk(app):
+    """A full build of module docs walks once, for the database, and no more."""
     app.build()
 
     provider = app.env.sv_index.structure_provider
     assert provider is not None
-    assert provider.computed is False, (
-        "documenting modules must not trigger a hierarchy walk"
+    assert provider.walk_count == 1, (
+        "documenting modules must not walk the hierarchy again"
     )
 
 

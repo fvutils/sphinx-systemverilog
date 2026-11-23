@@ -1,0 +1,12 @@
+{"r":"header","format":"svdb","schema":"1.0","producer":{"name":"example KDB exporter","version":"0.1","frontend":"Verdi NPI"},"role":"local","origin":"soc_rtl","sections":{"files":"partial","objects":"partial","docs":"absent","structure":"complete","connections":"complete","elaboration":"complete"}}
+{"r":"file","id":"1","path":"/proj/soc/rtl/soc_top.v"}
+{"r":"object","kind":"module","ns":"design","qname":"soc_top","name":"soc_top","pos":0,"loc":{"file":"1","line":1}}
+{"r":"object","kind":"port","ns":"design","qname":"soc_top::clk","name":"clk","parent":"soc_top","pos":0,"detail":{"dir":"input"}}
+{"r":"object","kind":"net","ns":"design","qname":"soc_top::axi_aw","name":"axi_aw","parent":"soc_top","pos":1,"detail":{"net_type":"wire","type":{"text":"[63:0]"}}}
+{"r":"object","kind":"module","ns":"design","qname":"cpu","name":"cpu","pos":1}
+{"r":"object","kind":"port","ns":"design","qname":"cpu::clk","name":"clk","parent":"cpu","pos":0,"detail":{"dir":"input"}}
+{"r":"object","kind":"port","ns":"design","qname":"cpu::m_aw","name":"m_aw","parent":"cpu","pos":1,"detail":{"dir":"output"}}
+{"r":"object","kind":"instance","ns":"design","qname":"soc_top::u_cpu","name":"u_cpu","parent":"soc_top","pos":2,"loc":{"file":"1","line":20},"detail":{"of":{"name":"cpu"},"of_kind":"module","conns":[{"port":"clk","pos":0,"mode":"named","dir":"input","expr":{"text":"clk"}},{"port":"m_aw","pos":1,"mode":"named","dir":"output","expr":{"text":"axi_aw"}}]}}
+{"r":"object","kind":"instance","ns":"design","qname":"soc_top::u_noc","name":"u_noc","parent":"soc_top","pos":3,"loc":{"file":"1","line":30},"detail":{"of":{"name":"vendor_noc"},"of_kind":"module","state":"external","conns":[{"port":"s_aw","pos":0,"mode":"named","dir":"input","expr":{"text":"axi_aw"}}]}}
+{"r":"elab","def":"soc_top","key":"e3b0c44298fc1c14","count":1,"sites":[{"inst":"soc_top::u_cpu","count":1},{"inst":"soc_top::u_noc","count":1}]}
+{"r":"top","elab":"soc_top@e3b0c44298fc1c14","origin":"configured"}

@@ -1,0 +1,9 @@
+{"id": "f1", "lang": "sv", "path": "unknown_module.sv", "r": "file"}
+{"default_nettype": "wire", "files": ["f1"], "id": "cu0", "r": "unit"}
+{"doc": {"text": "D3c golden: a module that instantiates something not in this compilation.\nIt is kept as an object (``state: unresolved``, ``of_kind: unknown``), with\nits connections recorded exactly as written; nothing about its ports can\nbe known."}, "kind": "module", "loc": {"col": 8, "file": "f1", "line": 5}, "name": "top", "ns": "design", "pos": 0, "qname": "top", "r": "object"}
+{"detail": {"net_type": "wire", "type": {"form": "builtin", "text": "logic"}}, "kind": "net", "loc": {"col": 8, "file": "f1", "line": 6}, "name": "a", "ns": "design", "parent": "top", "pos": 0, "qname": "top::a", "r": "object", "sig": "wire a"}
+{"detail": {"net_type": "wire", "type": {"form": "builtin", "text": "logic"}}, "kind": "net", "loc": {"col": 11, "file": "f1", "line": 6}, "name": "b", "ns": "design", "parent": "top", "pos": 1, "qname": "top::b", "r": "object", "sig": "wire b"}
+{"detail": {"bind": null, "conns": [{"expr": {"refs": [{"at": [0, 1], "name": "a"}], "text": "a"}, "mode": "named", "port": "clk", "pos": 0}, {"expr": {"refs": [{"at": [0, 1], "name": "b"}], "text": "b"}, "mode": "named", "port": "rst_n", "pos": 1}], "of": {"name": "acme_uvc"}, "of_kind": "unknown", "state": "unresolved"}, "doc": {"text": "Not defined anywhere in these sources."}, "kind": "instance", "loc": {"col": 12, "file": "f1", "line": 9}, "name": "u1", "ns": "design", "parent": "top", "pos": 2, "qname": "top::u1", "r": "object", "sig": "acme_uvc u1 (.clk(a), .rst_n(b))"}
+{"count": 1, "def": "top", "key": "e3b0c44298fc1c14", "r": "elab", "sites": [{"inst": "top::u1"}]}
+{"elab": "top@e3b0c44298fc1c14", "origin": "inferred", "r": "top"}
+{"code": "Parser", "message": "unknown_module.sv:9:3: error: unknown module 'acme_uvc'\n  acme_uvc u1 (.clk(a), .rst_n(b));\n  ^~~~~~~~\n", "r": "diag", "severity": "error"}

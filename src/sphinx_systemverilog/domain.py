@@ -348,45 +348,53 @@ class SystemVerilogDomain(Domain):
 
     def note_object(self, fullname: str, kind: str, anchor: str, docname: str) -> None:
         self.objects[fullname] = (docname, anchor, kind)
+        self._leaves = None
 
     def clear_doc(self, docname: str) -> None:
         for fullname, (dn, _anchor, _kind) in list(self.objects.items()):
             if dn == docname:
                 del self.objects[fullname]
+        self._leaves = None
 
     def merge_domaindata(self, docnames: Iterable[str], otherdata: dict) -> None:
         for fullname, data in otherdata.get("objects", {}).items():
             if data[0] in docnames:
                 self.objects[fullname] = data
+        self._leaves = None
+
+    #: Documented names by their last segment, built on first lookup after a
+    #: change: a bare-name reference costs one dict lookup, not a pass over
+    #: every documented object (plan D2-IMPL-5).  Not domain data, so it is
+    #: neither pickled nor merged.
+    _leaves: dict[str, list[str]] | None = None
+
+    def _by_leaf(self, leaf: str) -> list[str]:
+        if self._leaves is None:
+            leaves: dict[str, list[str]] = {}
+            for fn in self.objects:
+                leaves.setdefault(fn.rsplit("::", 1)[-1], []).append(fn)
+            self._leaves = leaves
+        return self._leaves.get(leaf, [])
 
     def resolve_xref(
         self, env, fromdocname, builder, typ, target, node, contnode
     ):
         match = self._find(target)
         if match is None:
-            # The generic ``obj`` role is also what NaturalDocs ``<xref>`` spans
-            # are converted to; those are inferred, not author-written, so they
-            # degrade silently to text.  Explicit typed roles warn.
-            if typ != "obj":
-                candidates = self.candidates(target)
-                detail = ""
-                if candidates:
-                    detail = " (ambiguous; candidates: %s)" % ", ".join(
-                        sorted(candidates)
-                    )
-                logger.warning(
-                    "sphinx-systemverilog: cannot resolve sv:%s reference %r%s",
-                    typ, target, detail, type="systemverilog",
-                    location=node,
-                )
-            return None
+            # Then a ``role: external`` database.  Intersphinx and
+            # ``sv_external_docs`` follow through ``missing-reference``, where
+            # an explicit typed role still unresolved warns (linkout.py); the
+            # generic ``obj`` role (inferred references) degrades to text.
+            from .linkout import database_ref
+
+            return database_ref(env.app, target, contnode)
         fullname, (docname, anchor, _kind) = match
         return make_refnode(builder, fromdocname, docname, anchor, contnode, fullname)
 
     def candidates(self, target: str) -> list[str]:
         """Fully-qualified names whose final segment matches *target*."""
         leaf = target.replace(".", "::").split("::")[-1]
-        return [fn for fn in self.objects if fn.split("::")[-1] == leaf]
+        return list(self._by_leaf(leaf))
 
     def resolve_any_xref(
         self, env, fromdocname, builder, target, node, contnode
@@ -408,7 +416,8 @@ class SystemVerilogDomain(Domain):
             return alt, self.objects[alt]
         # Bare-name fallback: unique suffix match.
         suffix = "::" + target
-        hits = [fn for fn in self.objects if fn == target or fn.endswith(suffix)]
+        hits = [fn for fn in self._by_leaf(target.split("::")[-1])
+                if fn == target or fn.endswith(suffix)]
         if len(hits) == 1:
             return hits[0], self.objects[hits[0]]
         return None

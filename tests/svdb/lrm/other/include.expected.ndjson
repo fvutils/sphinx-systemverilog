@@ -1,0 +1,13 @@
+{"id": "f1", "lang": "sv", "path": "include.sv", "r": "file"}
+{"id": "f2", "lang": "svh", "path": "include_defs.svh", "r": "file"}
+{"id": "f3", "lang": "svh", "path": "include_sub.svh", "r": "file"}
+{"from": "f1", "line": 5, "r": "include", "to": "f2"}
+{"from": "f2", "line": 2, "r": "include", "to": "f3"}
+{"from": "f1", "line": 8, "r": "include", "to": "f2"}
+{"default_nettype": "wire", "files": ["f1", "f2", "f3"], "id": "cu0", "r": "unit"}
+{"kind": "module", "loc": {"col": 8, "file": "f1", "line": 7}, "name": "inc_top", "ns": "design", "pos": 0, "qname": "inc_top", "r": "object"}
+{"detail": {"default": {"text": "8"}, "local": true, "type": {"form": "builtin", "text": "int"}}, "kind": "parameter", "loc": {"col": 16, "file": "f2", "line": 3}, "name": "W", "ns": "design", "parent": "inc_top", "pos": 1, "qname": "inc_top::W", "r": "object", "sig": "localparam int W = 8"}
+{"detail": {"type": {"form": "builtin", "text": "logic [W-1:0]"}}, "kind": "variable", "loc": {"col": 17, "file": "f1", "line": 9}, "name": "data", "ns": "design", "parent": "inc_top", "pos": 0, "qname": "inc_top::data", "r": "object", "sig": "logic [W-1:0] data"}
+{"detail": {"form": "alias", "type": {"form": "builtin", "text": "logic [3:0]"}}, "doc": {"text": "Included by include_defs.svh."}, "kind": "typedef", "loc": {"col": 21, "file": "f3", "line": 2}, "name": "nibble_t", "ns": "design", "parent": "inc_top", "pos": 2, "qname": "inc_top::nibble_t", "r": "object", "sig": "typedef logic [3:0] nibble_t"}
+{"count": 1, "def": "inc_top", "key": "0d179284311d1aba", "params": [{"name": "W", "type": "int", "value": "8"}], "r": "elab"}
+{"elab": "inc_top@0d179284311d1aba", "origin": "inferred", "r": "top"}

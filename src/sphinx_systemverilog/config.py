@@ -39,6 +39,20 @@ def register_config(app: "Sphinx") -> None:
     app.add_config_value("sv_default_options", {}, "env", types=[dict])
     # Generate '[source]' links to highlighted SystemVerilog source.
     app.add_config_value("sv_viewcode", True, "env", types=[bool])
+    # Glob patterns (``fnmatch``, case-sensitive) naming modules, interfaces,
+    # classes and packages defined outside the sources, e.g. ``["axi_vip*"]``.  Only
+    # matching names stop warning as unknown; their instances are kept as
+    # ``unresolved``, with the connections written at the instantiation site.
+    app.add_config_value("sv_external", [], "env", types=[list])
+    # Header or stub sources of components documented elsewhere (a VIP's
+    # package, say): parsed with the project, but everything they declare is
+    # flagged ``external``.  Paths or globs relative to ``conf.py``, each its own
+    # origin label, or a dict ``{"axi_vip": ["vip/*.sv"]}`` naming the origin.
+    app.add_config_value("sv_external_sources", [], "env", types=[list, dict])
+    # Documentation URLs of components documented outside Sphinx: ``{glob:
+    # template}``, e.g. ``{"axi_vip*": "https://vendor/axi/{name}.html"}``, with
+    # ``{name}`` and ``{qname}`` filled.  Tried after intersphinx.
+    app.add_config_value("sv_external_docs", {}, "env", types=[dict])
     # Extract and document `\`define` macros.
     app.add_config_value("sv_document_macros", True, "env", types=[bool])
     # Which macro bodies appear in the signature.  ``short``: any body of 48
@@ -66,9 +80,8 @@ def register_config(app: "Sphinx") -> None:
     # cannot reach it, and scoped to UVM classes so a plain-SystemVerilog
     # project (where `new` carries the real arguments) is unaffected.
     app.add_config_value("sv_uvm_hide_trivial_new", True, "env", types=[bool])
-    # Restrict the (lazy) instance-hierarchy walk to these top modules.
-    # Empty = every elaborated top.  Only consulted when a structural directive
-    # actually asks for the hierarchy.
+    # Restrict the instance-hierarchy walk to these top modules.  Empty = every
+    # elaborated top.  The walk happens when the design database is built.
     app.add_config_value("sv_structure_tops", [], "env", types=[list])
     # Ceiling on instances visited during a hierarchy walk; exceeding it reports
     # truncation rather than letting a pathological generate loop hang a build.
@@ -79,6 +92,16 @@ def register_config(app: "Sphinx") -> None:
     # Cap on instantiation sites listed by ``sv:used-by``; the elided count is
     # always reported.  0 disables the cap.
     app.add_config_value("sv_used_by_limit", 50, "env", types=[int])
+
+    # -- the svdb database (docs/usage/database.md) ----------------------------
+    # Keep the front end's database in <doctreedir>/svdb/ between builds, so
+    # that a build of unchanged sources does not parse.  False builds it in
+    # memory every time.
+    app.add_config_value("sv_db_cache", True, "env", types=[bool])
+    # Pre-built databases (`svdb build`, `svdb import`) to read after the front
+    # end's own, in order: paths relative to conf.py, or {"path": ..., "role":
+    # "local" | "external"} mappings.
+    app.add_config_value("sv_databases", [], "env", types=[list])
 
     # -- UVM testbench elaboration -------------------------------------------
     # Glob patterns matched against a component's type name.  A match is
@@ -141,6 +164,27 @@ def validate_config(app: "Sphinx", config) -> None:
             type="systemverilog",
         )
         config.sv_macro_body = "short"
+    databases = []
+    for entry in getattr(config, "sv_databases", None) or []:
+        path = entry.get("path") if isinstance(entry, dict) else entry
+        role = entry.get("role", "local") if isinstance(entry, dict) else "local"
+        if not isinstance(path, str) or role not in ("local", "external"):
+            logger.warning(
+                "sv_databases entry %r is not a path or {path, role}; ignored",
+                entry, type="systemverilog",
+            )
+            continue
+        databases.append({"path": path, "role": role})
+    config.sv_databases = databases
+    docs = getattr(config, "sv_external_docs", None) or {}
+    if not isinstance(docs, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in docs.items()):
+        logger.warning(
+            "sv_external_docs must map name patterns to URL templates; ignored",
+            type="systemverilog",
+        )
+        docs = {}
+    config.sv_external_docs = docs
     if config.sv_doc_style not in DOC_STYLES:
         logger.warning(
             "sv_doc_style %r is not one of %s; falling back to 'native'",

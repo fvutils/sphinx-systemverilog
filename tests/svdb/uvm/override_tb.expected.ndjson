@@ -1,0 +1,15 @@
+{"component_count": 5, "r": "uvm.root", "root": {"name": "ovr_test"}, "root_candidates": ["ovr_test"], "root_origin": "run_test"}
+{"chain": ["ovr_test", "uvm_test", "uvm_component", "uvm_object", "uvm_void"], "loc": {"col": 9, "file": "f2", "line": 107}, "r": "uvm.type", "tier": "test", "type": {"name": "ovr_test"}}
+{"chain": ["ovr_env", "uvm_env", "uvm_component", "uvm_object", "uvm_void"], "loc": {"col": 9, "file": "f2", "line": 96}, "r": "uvm.type", "tier": "env", "type": {"name": "ovr_env"}}
+{"chain": ["ovr_agent", "uvm_agent", "uvm_component", "uvm_object", "uvm_void"], "loc": {"col": 9, "file": "f2", "line": 81}, "r": "uvm.type", "tier": "agent", "type": {"name": "ovr_agent"}}
+{"chain": ["ovr_driver", "uvm_driver", "uvm_component", "uvm_object", "uvm_void"], "loc": {"col": 9, "file": "f2", "line": 39}, "ports": [{"declared_by": "uvm_driver", "link": "seq_item", "name": "seq_item_port", "type": {"name": "uvm_seq_item_pull_port#(uvm_object)"}}, {"declared_by": "uvm_driver", "link": "analysis", "name": "rsp_port", "type": {"name": "uvm_analysis_port#(uvm_object)"}}], "r": "uvm.type", "tier": "driver", "type": {"name": "ovr_driver"}}
+{"chain": ["ovr_monitor", "uvm_monitor", "uvm_component", "uvm_object", "uvm_void"], "loc": {"col": 9, "file": "f2", "line": 53}, "r": "uvm.type", "tier": "monitor", "type": {"name": "ovr_monitor"}}
+{"handle": "env", "inst_name": "env", "loc": {"col": 13, "file": "f2", "line": 136}, "owner": {"name": "ovr_test"}, "r": "uvm.child", "type": {"name": "ovr_env"}}
+{"handle": "agt", "inst_name": "agt", "loc": {"col": 13, "file": "f2", "line": 103}, "owner": {"name": "ovr_env"}, "r": "uvm.child", "type": {"name": "ovr_agent"}}
+{"handle": "drv", "inst_name": "drv", "loc": {"col": 13, "file": "f2", "line": 91}, "owner": {"name": "ovr_agent"}, "r": "uvm.child", "type": {"name": "ovr_driver"}}
+{"handle": "mon", "inst_name": "mon", "loc": {"col": 13, "file": "f2", "line": 92}, "owner": {"name": "ovr_agent"}, "r": "uvm.child", "type": {"name": "ovr_monitor"}}
+{"loc": {"col": 7, "file": "f2", "line": 118}, "method": "build_phase", "original": {"name": "ovr_driver"}, "owner": {"name": "ovr_test"}, "r": "uvm.override", "replacement": {"name": "fast_driver"}}
+{"loc": {"col": 7, "file": "f2", "line": 121}, "method": "build_phase", "original": {"name": "ovr_item"}, "owner": {"name": "ovr_test"}, "r": "uvm.override", "replacement": {"name": "big_item"}}
+{"conditional": true, "loc": {"col": 9, "file": "f2", "line": 127}, "method": "build_phase", "original": {"name": "ovr_monitor"}, "owner": {"name": "ovr_test"}, "r": "uvm.override", "replacement": {"name": "noisy_moniter"}, "unknown": ["noisy_moniter"]}
+{"loc": {"col": 7, "file": "f2", "line": 130}, "method": "build_phase", "original": {"name": "ovr_monitor"}, "owner": {"name": "ovr_test"}, "r": "uvm.override", "replacement": {"name": "noisy_monitor"}}
+{"inst_path": "env.agt.drv", "kind": "inst", "loc": {"col": 7, "file": "f2", "line": 133}, "method": "build_phase", "original": {"name": "ovr_driver"}, "owner": {"name": "ovr_test"}, "r": "uvm.override", "replacement": {"name": "fast_driver"}}
