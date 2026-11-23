@@ -32,6 +32,7 @@ must not have.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from fnmatch import fnmatchcase
 from functools import lru_cache
@@ -2047,7 +2048,7 @@ class UvmProvider:
         return sites + self._unresolved_members(type_symbol, built)
 
     def _creation_sites(self, type_symbol: Any) -> list["_Site"]:
-        from pyslang.ast import SymbolKind
+        from pyslang.ast import StatementKind, SymbolKind
 
         try:
             members = list(type_symbol)
@@ -2059,6 +2060,13 @@ class UvmProvider:
             if getattr(member, "kind", None) != SymbolKind.Subroutine:
                 continue
             if getattr(member, "name", "") != "build_phase":
+                continue
+            body = getattr(member, "body", None)
+            if getattr(body, "kind", None) == StatementKind.Invalid:
+                self._visit_syntax(
+                    getattr(member, "syntax", None), type_symbol, sites,
+                    conditional=False, in_loop=False,
+                )
                 continue
             self._visit_statement(
                 getattr(member, "body", None), sites, conditional=False, in_loop=False
@@ -2156,6 +2164,15 @@ class UvmProvider:
         else:
             return None
 
+        return self._make_site(
+            handle, inst_name, type_name, symbol, created_by,
+            conditional, in_loop, value,
+        )
+
+    def _make_site(
+        self, handle: str, inst_name: str | None, type_name: str, symbol: Any,
+        created_by: str, conditional: bool, in_loop: bool, where: Any,
+    ) -> "_Site | None":
         chain = base_chain(symbol)
         if not is_component(chain):
             return None
@@ -2171,8 +2188,98 @@ class UvmProvider:
             multiplicity="N" if in_loop else "1",
             state=state,
             kind=node_kind,
-            location=_location_of(self._source_manager, value),
+            location=_location_of(self._source_manager, where),
             symbol=symbol,
+        )
+
+    def _visit_syntax(
+        self, node: Any, owner: Any, sites: list["_Site"], conditional: bool,
+        in_loop: bool, depth: int = 0,
+    ) -> None:
+        """Walk ``build_phase`` *syntax* when slang dropped the bound body.
+
+        Newer slang (pyslang 12) marks the whole body invalid when any one
+        statement in it fails to bind, so a single unresolvable create would
+        otherwise take every resolvable sibling with it.  The syntax survives;
+        each create found in it is resolved by name against the class index,
+        and one that does not resolve is left to :meth:`_unresolved_members`.
+        """
+        from pyslang.syntax import SyntaxKind, SyntaxNode
+
+        if node is None or depth > 64:
+            return
+        kind = getattr(node, "kind", None)
+
+        if kind == SyntaxKind.ExpressionStatement:
+            site = self._site_from_syntax(
+                getattr(node, "expr", None), owner, conditional, in_loop
+            )
+            if site is not None:
+                sites.append(site)
+            return
+
+        if kind in (SyntaxKind.ConditionalStatement, SyntaxKind.CaseStatement):
+            conditional = True
+        elif kind in (
+            SyntaxKind.ForLoopStatement,
+            SyntaxKind.ForeachLoopStatement,
+            SyntaxKind.LoopStatement,
+            SyntaxKind.DoWhileStatement,
+            SyntaxKind.ForeverStatement,
+        ):
+            in_loop = True
+
+        for child in node:
+            if isinstance(child, SyntaxNode):
+                self._visit_syntax(
+                    child, owner, sites, conditional, in_loop, depth + 1
+                )
+
+    def _site_from_syntax(
+        self, expr: Any, owner: Any, conditional: bool, in_loop: bool
+    ) -> "_Site | None":
+        from pyslang.syntax import SyntaxKind
+
+        if expr is None:
+            return None
+        handle = ""
+        value = expr
+        if getattr(expr, "kind", None) == SyntaxKind.AssignmentExpression:
+            match = re.match(r"\s*([A-Za-z_]\w*)", str(expr.left))
+            handle = match.group(1) if match else ""
+            value = expr.right
+        text = str(value).strip()
+
+        create = re.match(
+            r"([A-Za-z_]\w*)\s*(#\s*\(.*\))?\s*::\s*type_id\s*::\s*create\s*\(",
+            text, re.S,
+        )
+        if create:
+            symbol = self._class_index().get(create.group(1))
+            if symbol is None:
+                return None
+            type_name = _type_name(symbol) or create.group(1)
+            created_by = BY_FACTORY
+        elif re.match(r"new\b", text) and handle:
+            try:
+                members = list(owner)
+            except TypeError:
+                members = []
+            member = next(
+                (m for m in members if getattr(m, "name", "") == handle), None
+            )
+            symbol = getattr(member, "type", None)
+            type_name = _type_name(symbol)
+            if not type_name:
+                return None
+            created_by = BY_NEW
+        else:
+            return None
+
+        arg = re.search(r"\(\s*\"([^\"]*)\"", text)
+        return self._make_site(
+            handle, arg.group(1) if arg else None, type_name, symbol,
+            created_by, conditional, in_loop, value,
         )
 
     def _boundary(
