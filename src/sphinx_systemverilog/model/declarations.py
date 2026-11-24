@@ -49,7 +49,7 @@ from .builder import (
     _written_return_type,
 )
 from .comments import clean_comment_block, split_leading_trivia
-from .locations import is_real_location, macro_chain, resolve_location
+from .locations import LINK_SCHEME, is_real_location, macro_chain, resolve_location
 from .objects import SourceRef
 from .structure import _element_count, _first_element, _range_text
 
@@ -207,12 +207,13 @@ def extract(builder: Any, gates: bool = False) -> Extras:
         return out
     x = _Extractor(builder, builder.source_manager, out, gates=gates)
     for pkg in comp.getPackages():
-        if pkg.name in ("std", "$unit"):
+        if pkg.name in ("std", "$unit") or not is_real_location(builder.source_manager, pkg.location):
             continue
         _guard(x.scope, pkg, pkg.name)
         _guard(x.package_imports, pkg.syntax, pkg.name)
     names = [d.name for d in comp.getDefinitions()
-             if _DEFINITION_KINDS.get(str(getattr(d, "definitionKind", ""))) is not None]
+             if _DEFINITION_KINDS.get(str(getattr(d, "definitionKind", ""))) is not None
+             and is_real_location(builder.source_manager, d.location)]
     bodies = _guard(canonical_bodies, comp) or {}
     missing = [n for n in names if n not in bodies]
     # Keeps the second compilation alive while its symbols are read.
@@ -296,7 +297,7 @@ def _attributes(comp: Any, sm: Any, out: dict[tuple[str, int, int], list[dict[st
             for token in names(node):
                 add(token.location, attrs)
 
-    for tree in comp.getSyntaxTrees():
+    for tree in _source_trees(comp, sm):
         tree.root.visit(syntax)
 
 
@@ -332,7 +333,7 @@ def _macros(comp: Any, sm: Any, out: dict[tuple[str, int, int], dict[str, Any]])
                 rec["body"] = body
             out.setdefault((ref.file, ref.line, ref.column), rec)
 
-    for tree in comp.getSyntaxTrees():
+    for tree in _source_trees(comp, sm):
         last = getattr(tree.root, "endOfFile", None) or tree.root.getLastToken()
         tree.root.visit(visit)
         visit(last)
@@ -396,7 +397,7 @@ def _protected(comp: Any, sm: Any, out: Extras) -> None:
             else:
                 walk(child, scope)
 
-    for tree in comp.getSyntaxTrees():
+    for tree in _source_trees(comp, sm):
         walk(tree.root, None)
 
 
@@ -407,7 +408,7 @@ def _units(comp: Any, sm: Any, defines: dict[str, str], out: list[dict[str, Any]
     when it sets none)."""
     from pyslang import SourceLocation
 
-    for n, tree in enumerate(comp.getSyntaxTrees()):
+    for n, tree in enumerate(_source_trees(comp, sm)):
         # A one-declaration text tree has that declaration as its root.
         last = getattr(tree.root, "endOfFile", None) or tree.root.getLastToken()
         main = str(sm.getFileName(last.location))
@@ -446,7 +447,7 @@ def _includes(comp: Any, sm: Any, out: list[tuple[str, str, int]]) -> None:
     from pyslang import SourceLocation
 
     seen: set[tuple[str, str, int]] = set()
-    for tree in comp.getSyntaxTrees():
+    for tree in _source_trees(comp, sm):
         for d in tree.getIncludeDirectives():
             start = getattr(getattr(d.syntax, "sourceRange", None), "start", None)
             if d.buffer is None or not is_real_location(sm, start):
@@ -538,7 +539,7 @@ def _elaborate_alone(comp: Any, sm: Any, names: list[str]) -> tuple[Any, dict[st
     from pyslang.syntax import SyntaxTree
 
     second = Compilation()
-    for tree in comp.getSyntaxTrees():
+    for tree in _source_trees(comp, sm):
         second.addSyntaxTree(tree)
     insts = {f"__svdb_{i}": name for i, name in enumerate(names)}
     text = "module __svdb_elaborate__;\n" + "".join(
@@ -588,8 +589,10 @@ class _Extractor:
             k = sym.kind
             name = _join(qname, sym.name)
             if k == SymbolKind.ClassType:
+                self.class_header(getattr(sym, "syntax", None), name)
                 self.scope(sym, name)
             elif k == SymbolKind.GenericClassDef:
+                self.class_header(getattr(sym, "syntax", None), name)
                 spec = _specialization(sym, scope)
                 if spec is not None:
                     self.scope(spec, name)
@@ -887,6 +890,33 @@ class _Extractor:
         if _method_flag(sym, "Pure"):
             d.qualifiers.append("pure")
         return d
+
+    def class_header(self, syntax: Any, qname: str) -> None:
+        """A class's ``extends`` type arguments (``detail.extends_args``, as
+        written, named or ordered), ``implements`` list and class-scope imports."""
+        if type(syntax).__name__ != "ClassDeclarationSyntax":
+            return
+        detail: dict[str, Any] = {}
+        base = getattr(getattr(syntax, "extendsClause", None), "baseName", None)
+        while type(base).__name__ == "ScopedNameSyntax":
+            base = base.right
+        assign = getattr(base, "parameters", None) if type(base).__name__ == "ClassNameSyntax" else None
+        args = [_expr(a) for a in getattr(assign, "parameters", None) or () if not _is_token(a)]
+        if args:
+            detail["extends_args"] = args
+        impl = getattr(syntax, "implementsClause", None)
+        ifaces = [self.type_ref(_tokens_text(i), None, None)
+                  for i in getattr(impl, "interfaces", None) or () if not _is_token(i)]
+        if ifaces:
+            detail["implements"] = ifaces
+        self.out.patch(qname, detail)
+        for item in getattr(syntax, "items", None) or ():
+            # slang wraps it as a property (``PackageImportInClass``, not LRM).
+            item = getattr(item, "declaration", item)
+            if type(item).__name__ == "PackageImportDeclarationSyntax":
+                for imp in item.items or ():
+                    if not _is_token(imp):
+                        self.import_item(imp, qname, False)
 
     def package_imports(self, syntax: Any, qname: str) -> None:
         """``import p::*;``, ``import p::x;`` and a package's ``export p::x;``
@@ -1254,7 +1284,7 @@ class _Extractor:
             elif tn == "NamedPortConnectionSyntax":
                 name = item.name.valueText
                 entry["port"] = name
-                if item.openParen is None:
+                if not item.openParen:  # pyslang gives a falsy Unknown token, not None
                     entry["mode"] = "implicit"
                     entry["expr"] = {"text": name, "refs": [{"at": [0, len(name)], "name": name}]}
                 elif item.expr is None:
@@ -1768,12 +1798,33 @@ class _Extractor:
         start = re.match(r"(?:virtual\s+(?:interface\s+)?)?", text).end()
         m = _NAME.match(text, start)
         if m and m.group(0).split("::")[0].strip() not in _BUILTIN_TYPES:
-            ref["refs"] = [{"at": [start, m.end()], "name": re.sub(r"\s+", "", m.group(0))}]
+            span = {"at": [start, m.end()], "name": re.sub(r"\s+", "", m.group(0))}
+            target = self.linked_target(t)
+            if target:
+                span["target"] = target
+            ref["refs"] = [span]
         if resolve_from is not None and form in ("typedef", "type_param"):
             resolved = _type_str(resolve_from.canonicalType)
             if resolved and resolved != text:
                 ref["resolved"] = resolved
         return ref
+
+    def linked_target(self, t: Any) -> str | None:
+        """The qualified name of the class, interface or typedef *t* names,
+        when it is declared in text generated from a link database (the
+        reference must carry it: this file does not have the target)."""
+        if t is None:
+            return None
+        sym = getattr(t, "genericClass", None) or t
+        if sym.kind == SymbolKind.VirtualInterfaceType:
+            sym = getattr(getattr(t, "iface", None), "getDefinition", lambda: None)() or sym
+        try:
+            name = self.sm.getFileName(sym.location)
+        except Exception:  # noqa: BLE001
+            return None
+        if not name.startswith(LINK_SCHEME):
+            return None
+        return getattr(sym, "hierarchicalPath", None) or getattr(sym, "name", None) or None
 
     def variable_detail(self, sym: Any) -> dict[str, Any]:
         detail: dict[str, Any] = {}
@@ -1797,14 +1848,23 @@ class _Extractor:
         if sym.kind == SymbolKind.TypeParameter:
             detail["type_param"] = True
             ts = getattr(sym.targetType, "typeSyntax", None)
-            if ts is not None and _tokens_text(ts):
-                detail["default_type"] = self.type_ref(_tokens_text(ts), sym.targetType.type, None)
+            target = _tokens_text(ts) if ts is not None else ""
+            # A class's symbols come from a specialization (``_specialization``),
+            # whose target is the override; the default is in the declaration.
+            assign = getattr(getattr(sym, "syntax", None), "assignment", None)
+            written = _tokens_text(assign.type) if getattr(assign, "type", None) is not None else target
+            if written:
+                detail["default_type"] = self.type_ref(written, sym.targetType.type if written == target else None,
+                                                       None)
             return detail
         ts = getattr(sym.declaredType, "typeSyntax", None)
         text = _tokens_text(ts) if ts is not None else ""
         if text:
             detail["type"] = self.type_ref(re.sub(r"^(parameter|localparam)\s+", "", text), sym.type, None)
         init = getattr(sym.declaredType, "initializerSyntax", None)
+        declared = getattr(getattr(getattr(sym, "syntax", None), "initializer", None), "expr", None)
+        if declared is not None and init is not None and _tokens_text(declared) != _tokens_text(init):
+            init, evaluate = declared, False    # a specialization's override (see above)
         if init is not None:
             expr: dict[str, Any] = {"text": _tokens_text(init)}
             if evaluate:
@@ -2009,6 +2069,24 @@ def _typedef_signature(sym: Any) -> str:
     from .builder import _typedef_signature as sig
 
     return sig(sym)
+
+
+def _source_trees(comp: Any, sm: Any) -> list[Any]:
+    """*comp*'s syntax trees, without those generated from link databases."""
+    out = []
+    for tree in comp.getSyntaxTrees():
+        try:
+            name = sm.getFileName(tree.root.sourceRange.start)
+        except Exception:  # noqa: BLE001
+            name = ""
+        if not name.startswith(LINK_SCHEME):
+            out.append(tree)
+    return out
+
+
+def _is_token(node: Any) -> bool:
+    """A separator in a ``SeparatedList`` (``,``), not a syntax node."""
+    return type(node).__name__ == "Token"
 
 
 def _form(t: Any) -> str | None:

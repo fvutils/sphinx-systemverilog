@@ -71,6 +71,8 @@ def cmd_build(args) -> int:
             kw[key] = getattr(args, flag)
     if args.no_macros:
         kw["document_macros"] = False
+    if args.link:
+        kw["links"] = [*kw.get("links", ()), *args.link]
     kw.setdefault("base_path", None)
     if not kw.get("source_dirs") and not kw.get("build_units"):
         print("svdb: nothing to parse; give --source-dir, --build-unit or --sphinx-conf", file=sys.stderr)
@@ -129,6 +131,8 @@ def cmd_stats(args) -> int:
             "unresolved": q("SELECT count(*) FROM ref WHERE target_id IS NULL AND given = 0")[0][0],
             "external": q("SELECT count(*) FROM ref WHERE target_id IS NULL AND given = 1")[0][0],
             "sections": dict(q("SELECT name, status FROM section ORDER BY name")),
+            "links": [{"origin": lk.origin, "path": lk.path, "units": list(lk.units), "state": lk.state}
+                      for lk in db.links()],
         }
         if args.unresolved:
             stats["unresolved_refs"] = [
@@ -150,6 +154,11 @@ def cmd_stats(args) -> int:
           f" {stats['external']} to other databases)")
     for r in stats.get("unresolved_refs", ()):
         print(f"  {r['from']}  {r['role']}  {r['name']}")
+    for lk in stats["links"]:
+        # Alone, the file cannot check a hash: "missing" means "not open here".
+        note = {"missing": "not open; give it with the database to check it"}.get(lk["state"], lk["state"])
+        print(f"linked against {lk['origin']} ({lk['path'] or 'path unknown'}): {', '.join(lk['units'])}"
+              f" [{note}]")
     return 0
 
 
@@ -208,7 +217,7 @@ def cmd_sql(args) -> int:
 def cmd_uvm_tree(args) -> int:
     from .uvm_tree import render_dot, render_text
 
-    with Database.open(args.db) as db:
+    with Database.open(args.db, follow_links=args.follow_links) as db:
         try:
             tree = db.uvm_tree(args.root, name=args.name, include_conditional=not args.no_conditional,
                                max_nodes=args.max_nodes)
@@ -221,6 +230,32 @@ def cmd_uvm_tree(args) -> int:
         text = render_dot(tree)
     else:
         text = tree.dumps(nested=args.format == "nested") + "\n"
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def cmd_uvm_sequences(args) -> int:
+    import json
+
+    from .uvm_sequences import open_provider, render_text, to_json, view
+
+    if args.view != "tasks" and not args.name:
+        print(f"svdb: the {args.view} view needs a class name", file=sys.stderr)
+        return 1
+    provider = open_provider(args.db, follow_links=args.follow_links)
+    value = view(provider, args.view, args.name or "", args.method or "")
+    if value is None:
+        what = "sequence" if args.view == "users" else "behavioural task"
+        print(f"svdb: no {what} named {args.name!r}", file=sys.stderr)
+        return 1
+    if args.format == "text":
+        text = render_text(args.view, value)
+    else:
+        text = json.dumps(to_json(value), indent=2) + "\n"
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(text)
@@ -245,6 +280,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--doc-style", choices=["native", "naturaldocs", "doxygen", "auto"])
     s.add_argument("--uvm-root", help="root UVM component (default: detected from run_test)")
     s.add_argument("--no-macros", action="store_true", help="do not record `define macros")
+    s.add_argument("--link", action="append", metavar="DATABASE",
+                   help="link against this database: what the sources use but do not define is taken"
+                        " from it and not written (repeat; the first that defines a name wins)")
     s.set_defaults(func=cmd_build)
 
     s = sub.add_parser("import", help="import NDJSON into a database file")
@@ -288,6 +326,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-d", "--db", action="append", required=True, help="database file (repeat to stitch several)")
     s.add_argument("--root", help="root test class (default: the database's uvm.root)")
     s.add_argument("--name", default="uvm_test_top", help="the root's instance name (default: uvm_test_top)")
+    s.add_argument("--follow-links", action="store_true",
+                   help="also open the databases the given ones were linked against")
     s.add_argument("--format", choices=["json", "nested", "text", "dot"], default="json",
                    help="json (flat, default), nested JSON, an indented text tree, or Graphviz dot")
     s.add_argument("--no-conditional", action="store_true",
@@ -295,6 +335,21 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--max-nodes", type=int, default=5000, help="stop after this many components (default 5000)")
     s.add_argument("-o", "--output", help="file to write (default: stdout)")
     s.set_defaults(func=cmd_uvm_tree)
+
+    s = sub.add_parser("uvm-sequences",
+                       help="the sequences a test task or sequence depends on, or that depend on a sequence")
+    s.add_argument("name", nargs="?", help="the class: a test or other component, or a sequence")
+    s.add_argument("-d", "--db", action="append", required=True, help="database file (repeat for linked ones)")
+    s.add_argument("--view", choices=["catalog", "tree", "users", "tasks"], default="catalog",
+                   help="catalog (each sequence once, default), tree (every start, nested), users (what"
+                        " depends on a sequence), or tasks (every behavioural task; no name)")
+    s.add_argument("--method", help="the task: body for a sequence (default), a task phase for a component"
+                                    " (default run_phase)")
+    s.add_argument("--follow-links", action="store_true",
+                   help="also open the databases the given ones were linked against")
+    s.add_argument("--format", choices=["json", "text"], default="json")
+    s.add_argument("-o", "--output", help="file to write (default: stdout)")
+    s.set_defaults(func=cmd_uvm_sequences)
     return p
 
 

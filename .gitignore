@@ -226,3 +226,6 @@ packages/
 # examples/cva6: the CVA6 checkout and its build output
 examples/cva6/_cva6
 examples/cva6/_build/
+
+# elkjs, copied in by scripts/fetch_elkjs.py (ivpm post-update hook); shipped, never committed
+src/sphinx_systemverilog/diagram/js/

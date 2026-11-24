@@ -181,6 +181,21 @@
             "url_template": {"type": "string", "description": "Placeholders: {kind} {qname} {name} {anchor}."}
           }
         },
+        "links": {
+          "description": "Databases the compile was linked against: what the sources used from them was compiled from declarations generated from them and is not in this file (schema 1.1).",
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["origin", "units"],
+            "properties": {
+              "origin": {"type": "string", "description": "The linked database's label (its header origin, else its file name)."},
+              "path": {"type": "string", "description": "Where the linked database was, when this file was written."},
+              "hash": {"type": "string", "description": "SHA-256 of the linked database file."},
+              "units": {"type": "array", "items": {"type": "string"}, "description": "Packages and definitions linked from it."},
+              "includes": {"type": "array", "items": {"type": "string"}, "description": "`include names whose macros it supplied."}
+            }
+          }
+        },
         "sections": {
           "type": "object",
           "propertyNames": {"enum": ["files", "sources", "objects", "docs", "bodies", "anonymous",
@@ -957,13 +972,18 @@
       "type": "object", "additionalProperties": false,
       "required": ["kind"],
       "properties": {
-        "kind": {"enum": ["action", "sequence", "item", "decision", "branch", "fork", "loop", "delay"]},
+        "kind": {"enum": ["action", "sequence", "item", "decision", "branch", "fork", "loop", "delay", "wait", "objection", "call"]},
         "label": {"type": "string"},
         "type": {"$ref": "#/$defs/Ref"},
         "join": {"type": "string"},
         "macro": {"type": "string"},
         "children": {"type": "array", "items": {"$ref": "#/$defs/uvm_activity"}},
-        "loc": {"$ref": "#/$defs/Loc"}
+        "loc": {"$ref": "#/$defs/Loc"},
+        "sequencer": {"type": "string", "description": "The sequencer passed to start(), as written."},
+        "resolved": {"enum": ["created", "member", "declared"], "description": "How the started type was worked out: a create or new in the task, a create of the class member in another method, or the handle's declared type only."},
+        "created_in": {"type": "string", "description": "For resolved 'member', the method that creates the member."},
+        "created_by": {"enum": ["factory", "new"], "description": "How the handle was created, when it was: a factory override can replace the type only of a factory create."},
+        "declared_by": {"type": "string", "description": "For kind 'call', the class declaring the task called; its body is in children."}
       }
     },
     "rec_uvm_sequence": {
@@ -977,7 +997,8 @@
         "declared_by": {"type": "string"},
         "overridden": {"type": "boolean"},
         "other": {"type": "integer", "minimum": 0},
-        "macros": {"type": "array", "items": {"type": "string"}}
+        "macros": {"type": "array", "items": {"type": "string"}},
+        "method": {"type": "string", "description": "The task read: absent for a sequence's body(), a task phase name (run_phase, main_phase, ...) for a component."}
       }
     }
   }

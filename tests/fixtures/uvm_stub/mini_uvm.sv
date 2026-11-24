@@ -32,10 +32,20 @@ package mini_uvm_pkg;
     endfunction
   endclass
 
+  typedef class uvm_object;
+
   class uvm_phase extends uvm_void;
     string m_name;
     function new(string name = "phase");
       m_name = name;
+    endfunction
+    // Objections are what keep a task phase alive; a run_phase activity
+    // diagram draws them as their own steps.
+    virtual function void raise_objection(uvm_object obj, string description = "",
+                                          int count = 1);
+    endfunction
+    virtual function void drop_objection(uvm_object obj, string description = "",
+                                         int count = 1);
     endfunction
   endclass
 

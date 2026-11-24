@@ -72,6 +72,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           args: "-a"
 
+      - name: Fetch elkjs
+        # ivpm's post-update hook normally does this; doing it explicitly keeps
+        # the tests independent of the ivpm version ivpm-setup installs.
+        run: ./packages/python/bin/python scripts/fetch_elkjs.py --from packages/elkjs || ./packages/python/bin/python scripts/fetch_elkjs.py
+
       - name: Install package (editable) into the ivpm environment
         run: ./packages/python/bin/python -m pip install -e ".[dev]"
 
@@ -150,11 +155,16 @@ jobs:
       - name: Build distributions
         # No version stamping: this job only ever runs on a tag, where the
         # .forgejo side deliberately leaves the version clean too.
+        # elkjs is git-ignored and this job doesn't run ivpm, so fetch it
+        # (pinned and hash-checked) before building. A wheel without it would
+        # silently draw every block diagram with the Graphviz fallback.
         run: |
+          python scripts/fetch_elkjs.py
           python -m pip install --upgrade pip build twine
           rm -rf dist/
           python -m build .
           python -m twine check dist/*
+          python -m zipfile -l dist/*.whl | grep -q 'sphinx_systemverilog/diagram/js/elk.bundled.js'
 
       - name: Check the tag matches the package version
         # Guards against tagging v0.2.0 while __version__.py still says 0.1.0,

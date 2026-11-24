@@ -22,6 +22,8 @@ classifiers = [
 dependencies = [
     "sphinx>=7.0",
     "pyslang>=7.0",
+    # Runs elkjs (shipped in diagram/js/) to lay out block diagrams.
+    "mini-racer>=0.14",
 ]
 
 [project.scripts]
@@ -67,6 +69,10 @@ sphinx_systemverilog = [
     "svdb/schema/examples/*.ndjson",
     "share/skills/*/SKILL.md",
     "share/skills/*/references/*.md",
+    # elkjs: git-ignored, put there by scripts/fetch_elkjs.py (ivpm hook or CI).
+    "diagram/js/elk.bundled.js",
+    "diagram/js/LICENSE.md",
+    "diagram/js/VERSION",
 ]
 
 # Consumed by IVPM's agents handler, which links the skill into .agents/skills/,

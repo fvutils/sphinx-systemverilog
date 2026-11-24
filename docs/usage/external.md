@@ -10,6 +10,7 @@ such a component, from the least work to the most information:
 | Name pattern | `sv_external` | the names | instances drawn dotted, `(not in build)`, no warning |
 | Stub sources | `sv_external_sources` | header or stub `.sv` files | instances drawn dashed, `(external)`, ports known |
 | External database | `sv_databases` with `role: external` | an `.svdb` describing the component | links to its documentation, ports on diagram edges |
+| Linked database | `sv_databases` (linked by default) | the component's `.svdb`, built from its sources | the build compiles against it: no unknown names, UVM views across it (see {doc}`linking`) |
 
 They combine: a pattern keeps the build quiet, and a database or a URL template
 (`sv_external_docs`) adds the links.
@@ -88,7 +89,9 @@ sv_databases = [{"path": "_db/axi_vip.svdb", "role": "external"}]
 
 An external database is the same format as any other (see {doc}`database`), but
 its objects are not documented in your project: no `autosv*` directive reads
-them, and they are not in your index. They serve two purposes.
+them, and they are not in your index. They serve two purposes, and, when the
+database is complete (built from the component's sources), a third: the build
+links against it (see {doc}`linking`).
 
 **Links.** A reference to a name the project does not define (in an instance
 tree, a signature, or `` :sv:module:`axi_vip_mst` ``) links to the component's

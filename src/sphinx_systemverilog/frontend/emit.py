@@ -52,8 +52,10 @@ _HEAD = re.compile(r"[A-Za-z_$\\][\w$]*(?:\s*::\s*[A-Za-z_$\\][\w$]*)*")
 
 
 def header(*, doc_style: str, inputs: dict[str, Any] | None = None, origin: str | None = None,
-           created: bool = True, extra_sections: dict[str, str] | None = None) -> dict:
-    """The header record of a front-end database."""
+           created: bool = True, extra_sections: dict[str, str] | None = None,
+           links: list[dict] | None = None) -> dict:
+    """The header record of a front-end database; *links* are the databases
+    the compile was linked against (linking plan §1.5)."""
     from ..__version__ import __version__
 
     try:
@@ -72,8 +74,10 @@ def header(*, doc_style: str, inputs: dict[str, Any] | None = None, origin: str 
         rec["origin"] = origin
     rec["inputs"] = {**{k: v for k, v in (inputs or {}).items() if v not in (None, "", [], {})},
                      "doc_style": doc_style}
-    rec["sections"] = {"files": "complete", "objects": "complete", "docs": "complete",
+    rec["sections"] = {"files": "complete", "objects": "complete", "docs": "complete", "bodies": "complete",
                        "diagnostics": "complete", **(extra_sections or {})}
+    if links:
+        rec["links"] = links
     return rec
 
 
@@ -81,7 +85,7 @@ def emit(roots: Iterable[SvObject], *, doc_style: str, diagnostics: Iterable[str
          suppressed: int = 0, inputs: dict[str, Any] | None = None, origin: str | None = None,
          created: bool = True, extras: Extras | None = None,
          extra_sections: dict[str, str] | None = None, uvm: Any = None,
-         origin_of: Any = None) -> Iterator[dict]:
+         origin_of: Any = None, links: list[dict] | None = None) -> Iterator[dict]:
     """Records for *roots*: header, files, `` `include `` edges, units, objects in tree order,
     macro bodies, imports, ``uvm.*`` (from *uvm*, a :class:`~.uvm.UvmViews`), diagnostics.
 
@@ -162,7 +166,7 @@ def emit(roots: Iterable[SvObject], *, doc_style: str, diagnostics: Iterable[str
         uvm_records = uvm_mod.records(uvm, loc)
         extra_sections = {**(extra_sections or {}), **uvm.sections()}
     yield header(doc_style=doc_style, inputs=inputs, origin=origin, created=created,
-                 extra_sections=extra_sections)
+                 extra_sections=extra_sections, links=links)
     for path, i in files.items():
         rec = _file(i, path)
         if extras.protected.get(path):
@@ -299,7 +303,7 @@ def _object(obj: SvObject, ns: str, parent: str | None, pos: int, loc) -> dict:
     if obj.kind == "parameter":
         detail["port_list"] = True
     if obj.extends:
-        detail["extends"] = type_ref(obj.extends)
+        detail["extends"] = type_ref(obj.extends, getattr(obj, "extends_target", None))
     if quals:
         rec["quals"] = quals
     if obj.raw_doc is not None or obj.group:
@@ -312,13 +316,17 @@ def _object(obj: SvObject, ns: str, parent: str | None, pos: int, loc) -> dict:
     return rec
 
 
-def type_ref(text: str) -> dict:
-    """A ``TypeRef`` for *text*, with its leading name as a ``Span``."""
+def type_ref(text: str, target: str | None = None) -> dict:
+    """A ``TypeRef`` for *text*, with its leading name as a ``Span`` (naming
+    *target*, a qualified name, when given)."""
     ref: dict[str, Any] = {"text": text}
     m = _HEAD.match(text)
     if m:
         name = re.sub(r"\s+", "", m.group(0))
-        ref["refs"] = [{"at": [0, m.end()], "name": name}]
+        span: dict[str, Any] = {"at": [0, m.end()], "name": name}
+        if target:
+            span["target"] = target
+        ref["refs"] = [span]
     return ref
 
 

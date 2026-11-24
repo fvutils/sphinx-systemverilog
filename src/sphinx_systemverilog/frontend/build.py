@@ -22,7 +22,7 @@ import logging
 import os
 import pickle
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from ..model.index import SvIndex, build_index, external_sources_pairs, index_key
 from ..model.structure import DEFAULT_MAX_INSTANCES
@@ -63,6 +63,9 @@ class Options:
     external: tuple[str, ...] = ()
     #: ``sv_external_sources`` as ``(origin, path-or-glob)`` pairs (§6.2 option 2).
     external_sources: tuple[tuple[str, str], ...] = ()
+    #: Link databases (linking plan §1.7): what the sources use but do not
+    #: define is compiled from these, and not written to this database.
+    links: tuple[str, ...] = ()
 
     @classmethod
     def make(cls, **kw: Any) -> "Options":
@@ -78,7 +81,7 @@ class Options:
             elif isinstance(v, (list, tuple)):
                 v = tuple(v)
             elif v is None and k in ("source_dirs", "build_units", "include_dirs", "structure_tops",
-                                     "uvm_blackbox", "external"):
+                                     "uvm_blackbox", "external", "links"):
                 v = ()
             out[k] = v
         return cls(**out)
@@ -91,7 +94,8 @@ class Options:
         kw = asdict(self)
         kw.pop("structure_gates", None)
         kw["defines"] = dict(self.defines)
-        for k in ("source_dirs", "build_units", "include_dirs", "structure_tops", "uvm_blackbox", "external"):
+        for k in ("source_dirs", "build_units", "include_dirs", "structure_tops", "uvm_blackbox", "external",
+                  "links"):
             kw[k] = list(kw[k])
         kw["external_sources"] = list(self.external_sources)
         if self.uvm_blackbox_bases is not None:
@@ -198,10 +202,25 @@ def records(index: SvIndex, options: Options) -> Iterable[dict]:
                          suppressed=index.suppressed_count, inputs=options.inputs(), extras=extras,
                          extra_sections=extra_sections,
                          origin_of=index.builder.origin_of if index.builder is not None else None,
-                         uvm=uvm_mod.views(index.uvm_provider) if index.uvm_provider is not None else None)
+                         uvm=uvm_mod.views(index.uvm_provider) if index.uvm_provider is not None else None,
+                         links=[lk.record() for lk in getattr(index.builder, "linked", None) or ()])
     if design is not None:
-        yield from structure_mod.elab_records(design)
-        yield from structure_mod.top_records(design, configured=bool(options.structure_tops))
+        linked = {u for lk in getattr(index.builder, "linked", None) or () for u in lk.units}
+        yield from _unlinked_elab(structure_mod.elab_records(design), linked)
+        yield from (r for r in structure_mod.top_records(design, configured=bool(options.structure_tops))
+                    if r.get("elab", "").split("@", 1)[0] not in linked)
+
+
+def _unlinked_elab(recs: Iterable[dict], linked: set[str]) -> Iterator[dict]:
+    """*recs* without the elaborations of linked definitions: those are
+    described by the database they were linked from (linking plan §1.5)."""
+    for rec in recs:
+        if rec.get("def") in linked:
+            continue
+        for site in rec.get("sites", ()):
+            if site.get("elab", "").split("@", 1)[0] in linked:
+                del site["elab"]
+        yield rec
 
 
 def parse(options: Options) -> SvIndex:
@@ -291,9 +310,10 @@ def prune(cache_dir: str, keep: str) -> None:
 
 
 def open_index(options: Options, *, cache_dir: str | None, databases: Iterable[str] = (),
-               default_doc_style: str | None = None):
+               default_doc_style: str | None = None, stitch_databases: Iterable[str] = ()):
     """The :class:`~..model.db.DbIndex` for *options*: the front end's own
-    database first, then *databases* in order.
+    database first, then *databases* in order.  *stitch_databases* are read
+    only by the UVM stitcher, after those (linked ``role: external`` ones).
 
     With *cache_dir*, the front end's database is the cache entry, built
     when absent.  Without it (``sv_db_cache = False``), it is built in memory.
@@ -306,7 +326,8 @@ def open_index(options: Options, *, cache_dir: str | None, databases: Iterable[s
         snap = take_snapshot(index)
         w = write(index, options, ":memory:")
         return DbIndex.in_memory(w.conn, options, snap, databases, live=index,
-                                 default_doc_style=default_doc_style or options.doc_style)
+                                 default_doc_style=default_doc_style or options.doc_style,
+                                 stitch_databases=stitch_databases)
 
     os.makedirs(cache_dir, exist_ok=True)
     db_path, snap_path = cache_paths(cache_dir, options)
@@ -317,4 +338,5 @@ def open_index(options: Options, *, cache_dir: str | None, databases: Iterable[s
         live, _ = build(options, db_path, snap_path)
         prune(cache_dir, db_path)
     return DbIndex([db_path, *databases], options=options, snapshot_path=snap_path, live=live,
-                   default_doc_style=default_doc_style or options.doc_style)
+                   default_doc_style=default_doc_style or options.doc_style,
+                   stitch_databases=stitch_databases)

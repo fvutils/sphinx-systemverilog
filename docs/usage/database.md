@@ -129,7 +129,7 @@ among that function's calls (`step`).
 | `uvm.config` | `uvm_config_db` `set` or `get` | `id` (referred to by `uvm.binding`), `owner`, `method`, `action`, `cntxt`, `scope`, `field`, `type`, `value`, `virtual_interface` |
 | `uvm.override` | factory override | `owner`, `method`, `step`, `kind` (`type`, `inst`), `original`, `replacement`, `inst_path`, `path_base` (what `inst_path` is relative to: `owner`, `absolute` or `unknown`), `replace` (written only when `false`) |
 | `uvm.binding` | virtual interface handed to the testbench | `interface_type`, `field`, `instance_path`, `set` and `consumers` (`uvm.config` ids), `drivers` (`path`, `port`, `type`) |
-| `uvm.sequence` | sequence class | `type`, `chain`, `declared_by`, `overridden`, `body` (the sequence's activity as a nested list of nodes with `kind`: `item`, `sequence`, `fork`, `branch`, `loop`, `decision`, `delay`, `action`) |
+| `uvm.sequence` | sequence class, or task phase a component writes | `type`, `chain`, `declared_by`, `overridden`, `method` (absent for a sequence's `body()`; the phase name, such as `run_phase`, for a component), `body` (the task's activity as a nested list of nodes with `kind`: `item`, `sequence`, `fork`, `branch`, `loop`, `decision`, `delay`, `wait`, `objection`, `call`, `action`; a `call` node is a task of the class called from the task, with `declared_by`, the class declaring it, and its body as `children`; a `sequence` node also has `sequencer`, the argument of `start` as written, and a `sequence` or `item` node has `resolved`: `created`, `member` or `declared`, with `created_in`, the method that creates the member, for `member`, and `created_by`, `factory` or `new`, when it was created). A class from a linked database has no records here; they are in that database |
 
 For example, from a small testbench:
 
@@ -192,16 +192,21 @@ the build with a configuration error. A `role: external` database describes
 components documented elsewhere: its objects are link targets and diagram
 ports, not pages of your own (see {doc}`external`).
 
-A pre-built database brings objects and documentation comments. It does not
-bring the elaborated design or the UVM testbench views: those come from the
-sources this project parses.
+A pre-built database brings objects and documentation comments, and its UVM
+records join the testbench views (`sv:uvm-tree` stitches across databases).
+It does not bring the elaborated design: that comes from the sources this
+project parses.
+
+Each listed database is also *linked*: the project's sources compile against
+its declarations, so a testbench can use a VIP whose sources are not in the
+build (see {doc}`linking`). Add `"link": False` to an entry to opt out.
 
 ## Settings
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `sv_db_cache` | `True` | Keep the front end's database in `<doctreedir>/svdb/` between builds. |
-| `sv_databases` | `[]` | Pre-built databases read after the sources: paths (relative to `conf.py`) or `{"path": ..., "role": "local" \| "external"}`. |
+| `sv_databases` | `[]` | Pre-built databases read after the sources: paths (relative to `conf.py`) or `{"path": ..., "role": "local" \| "external", "link": True \| False}`. |
 
 ## CI pattern
 

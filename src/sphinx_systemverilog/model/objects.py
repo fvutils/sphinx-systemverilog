@@ -64,6 +64,9 @@ class SvObject:
     qualifiers: list[str] = field(default_factory=list)
     signature: str = ""
     extends: str | None = None
+    #: The base class's qualified name, when it is declared in a link
+    #: database: the reference must name it, since this file does not have it.
+    extends_target: str | None = field(default=None, compare=False, repr=False)
     raw_doc: str | None = None
     doc_style: str | None = None
     location: SourceRef | None = None

@@ -273,6 +273,12 @@ SEQUENCE_BODY = "body"
 _START_METHODS = {"start": "sequence", "start_item": "item"}
 _ABSORBED_METHODS = ("finish_item",)
 
+#: Library methods that keep a phase alive, and the label each is drawn with.
+#: Matched by name on any library class, since UVM declares them on
+#: ``uvm_phase``, ``uvm_objection`` and ``uvm_test_done_objection`` alike.
+_OBJECTION_METHODS = {"raise_objection": "raise objection",
+                      "drop_objection": "drop objection"}
+
 #: Activity node kinds.
 ACT_ACTION = "action"        # a plain step
 ACT_SEQUENCE = "sequence"    # a sub-sequence being started
@@ -282,6 +288,18 @@ ACT_BRANCH = "branch"        # one arm of a decision or one fork branch
 ACT_FORK = "fork"            # `fork ... join[_any|_none]`
 ACT_LOOP = "loop"            # any of the six loop statements
 ACT_DELAY = "delay"          # a `#` time control
+ACT_WAIT = "wait"            # `@(...)`, `wait (...)`, `wait fork`
+ACT_OBJECTION = "objection"  # `raise_objection` / `drop_objection`
+ACT_CALL = "call"            # a task of the class (or `super.`), its body inlined
+
+#: How deep helper-task calls are followed before the walk stops at a box.
+MAX_CALL_DEPTH = 8
+
+#: How a started sequence's or item's type was worked out, for the catalog.
+RESOLVED_CREATED = "created"    # a create or `new` assigned the handle in this task
+RESOLVED_DECLARED = "declared"  # only the handle's declared type is known
+RESOLVED_MEMBER = "member"      # another method of the class created the member
+RESOLVED_OVERRIDDEN = "overridden"  # a factory type override replaced it (catalog only)
 
 #: Join semantics, read from ``StatementBlockKind`` rather than guessed.
 JOIN_ALL, JOIN_ANY, JOIN_NONE = "all", "any", "none"
@@ -416,6 +434,29 @@ UVM_PHASES = (
 )
 
 _PHASE_ORDER = {name: position for position, name in enumerate(UVM_PHASES)}
+
+#: The phases that are tasks, and so consume time.  These are the ones a
+#: component's behaviour lives in, and the ones an activity diagram can be
+#: drawn for: a function phase has no waits, no forks that matter and no
+#: sequences to start.
+UVM_TASK_PHASES = (
+    "run_phase",
+    "pre_reset_phase",
+    "reset_phase",
+    "post_reset_phase",
+    "pre_configure_phase",
+    "configure_phase",
+    "post_configure_phase",
+    "pre_main_phase",
+    "main_phase",
+    "post_main_phase",
+    "pre_shutdown_phase",
+    "shutdown_phase",
+    "post_shutdown_phase",
+)
+
+#: What a component's activity diagram draws when no phase is named.
+DEFAULT_TASK_PHASE = "run_phase"
 
 
 def phase_inventory(names: Iterable[str]) -> list[str]:
@@ -811,6 +852,22 @@ class UvmActivity:
     #: Branches of a decision or fork; the body of a loop.
     children: tuple["UvmActivity", ...] = ()
     location: SourceRef | None = None
+    #: For :data:`ACT_SEQUENCE`, the sequencer passed to ``start`` as written
+    #: (``env.seqr``, ``p_sequencer.axi``); ``""`` when none is passed.
+    sequencer: str = ""
+    #: For :data:`ACT_SEQUENCE` and :data:`ACT_ITEM`, how *type_name* was
+    #: worked out: :data:`RESOLVED_CREATED`, :data:`RESOLVED_MEMBER` or
+    #: :data:`RESOLVED_DECLARED`.
+    resolved: str = ""
+    #: For :data:`RESOLVED_MEMBER`, the method that creates the member.
+    created_in: str = ""
+    #: How the handle was created, when it was: :data:`BY_FACTORY` (a factory
+    #: override can replace the type) or :data:`BY_NEW` (none can).
+    created_by: str = ""
+    #: For :data:`ACT_CALL`, the class declaring the task called, and
+    #: *children* its body; no children when it is not followed (recursion,
+    #: or :data:`MAX_CALL_DEPTH`).
+    declared_by: str = ""
 
     def walk(self) -> "Iterator[UvmActivity]":
         """This node and every node beneath it, in source order."""
@@ -821,7 +878,11 @@ class UvmActivity:
 
 @dataclass(frozen=True)
 class UvmSequence:
-    """One sequence's ``body()``, as an activity tree.
+    """One behavioural task, as an activity tree: a sequence's ``body()`` or a
+    component's task phase (``run_phase``, ``main_phase``, ...).
+
+    The two are the same thing to a reader --- a task that runs behaviour and
+    starts sequences --- so they share one model, told apart by *method*.
 
     ``other`` is not bookkeeping.  A ``body()`` is mostly *not* control flow ---
     reporting, assignment, randomization --- and a diagram that silently drew
@@ -845,6 +906,9 @@ class UvmSequence:
     other: int = 0
     #: Macros whose expansion was collapsed, by name, in first-seen order.
     macros: tuple[str, ...] = ()
+    #: The task that was read: :data:`SEQUENCE_BODY` for a sequence, a name
+    #: from :data:`UVM_TASK_PHASES` for a component.
+    method: str = SEQUENCE_BODY
 
     @property
     def empty(self) -> bool:
@@ -1380,6 +1444,8 @@ class UvmProvider:
     ) -> None:
         self._compilation = compilation
         self._source_manager = source_manager
+        #: Keys of walked views of linked classes, kept out of the records.
+        self._linked_keys: set[str] = set()
         #: Explicit root component type name; empty means auto-detect.
         self._root = root
         self._blackbox = list(blackbox or [])
@@ -1408,12 +1474,17 @@ class UvmProvider:
         #: contract was written, and the contract has not changed: overrides
         #: ride the same walk and add no scan of their own.
         self.config_walk_count = 0
-        #: Extracted sequence bodies by class name.  Per sequence rather than
-        #: one scan, because a page draws one sequence and reading every
-        #: ``body()`` in a UVM project would be a walk nobody asked for.
-        self._sequences: dict[str, UvmSequence | None] = {}
-        #: Number of ``body()`` walks performed; asserted by the same test.
+        #: Extracted behavioural tasks by ``(class name, method)``.  Per task
+        #: rather than one scan, because a page draws one task and reading
+        #: every ``body()`` in a UVM project would be a walk nobody asked for.
+        self._sequences: dict[tuple[str, str], UvmSequence | None] = {}
+        #: Number of task walks performed; asserted by the same test.
         self.sequence_walk_count = 0
+        #: Link databases (:meth:`attach_links`), and their stored views once
+        #: read: a linked class's tasks come from there, not from its
+        #: generated declaration, which has no statements.
+        self._link_paths: list[str] = []
+        self._link_views: list[Any] | None = None
         #: Extracted virtual-interface bindings; ``None`` until first asked for.
         self._bridge: UvmBridge | None = None
         #: Number of bridge scans performed; asserted by the same test.
@@ -1511,11 +1582,138 @@ class UvmProvider:
         sequence --- those are different mistakes from a sequence with an empty
         body, which returns a :class:`UvmSequence` that says so.
         """
+        return self.activity(name, SEQUENCE_BODY)
+
+    def activity(self, name: str, method: str = "") -> UvmSequence | None:
+        """Return one behavioural task of class *name* as an activity tree.
+
+        A sequence's task is ``body()``; a component's is one of
+        :data:`UVM_TASK_PHASES`.  An empty *method* picks the natural one for
+        the class: ``body`` for a sequence, ``run_phase`` for a component.
+        ``None`` when the class is neither, or *method* is not a task of that
+        kind of class.
+        """
         key = (name or "").strip().split("::")[-1]
-        if key not in self._sequences:
+        method = (method or "").strip()
+        cache = (key, method)
+        if cache not in self._sequences:
             self.sequence_walk_count += 1
-            self._sequences[key] = self._walk_sequence(key)
-        return self._sequences[key]
+            self._sequences[cache] = self._walk_sequence(key, method)
+        return self._sequences[cache]
+
+    def attach_links(self, paths: Iterable[str]) -> None:
+        """The link databases the sources were compiled against."""
+        self._link_paths = list(paths)
+        self._link_views = None
+
+    def _linked_task(self, name: str, method: str) -> UvmSequence | None:
+        """A linked class's task, from the first link database that knows the
+        class; ``None`` when none does (or none stored its UVM views)."""
+        from ..frontend import uvm as views_mod
+        from ..svdb.database import Database
+
+        if self._link_views is None:
+            self._link_views = []
+            for path in self._link_paths:
+                try:
+                    with Database.open([path]) as db:
+                        views = views_mod.read(db)
+                except Exception:  # noqa: BLE001
+                    continue
+                if "uvm.sequences" in views.sections():
+                    self._link_views.append(views)
+        for views in self._link_views:
+            known, task = views_mod.task_from(views, name, method)
+            if known:
+                return task
+        return None
+
+    def catalog(self, name: str, method: str = ""):
+        """The sub-sequence catalog of one behavioural task (:meth:`activity`),
+        as a :class:`~.uvm_catalog.SequenceCatalog`; ``None`` when there is
+        no such task."""
+        from .uvm_catalog import build_catalog
+        from .uvm_catalog import overrides_of as _overrides_of
+
+        root = self.activity(name, method)
+        if root is None:
+            return None
+        return build_catalog(root, self.sequence, self.origin, overrides=_overrides_of(self))
+
+    def tree(self, name: str, method: str = ""):
+        """The nested sequence tree of one behavioural task, as a
+        :class:`~.uvm_catalog.SequenceTree`; ``None`` when there is no such
+        task."""
+        from .uvm_catalog import build_tree, resolve_sequencers
+        from .uvm_catalog import overrides_of as _overrides_of
+
+        root = self.activity(name, method)
+        if root is None:
+            return None
+        tree = build_tree(root, self.sequence, self.origin, overrides=_overrides_of(self))
+        if root.method == SEQUENCE_BODY:
+            return tree
+        try:
+            components = self.uvm_tree(name)
+        except Exception:  # noqa: BLE001 - a tree without sequencer paths is still a tree
+            return tree
+        return resolve_sequencers(tree, components)
+
+    def tasks(self) -> list[UvmSequence]:
+        """Every behavioural task in the project: each sequence's ``body()``
+        and each task phase a component writes, linked classes' included."""
+        out: list[UvmSequence] = []
+        try:
+            classes = self._class_index()
+        except Exception:  # noqa: BLE001
+            return out
+        for name, symbol in classes.items():
+            if name.startswith(_LIBRARY_PREFIX):
+                continue
+            try:
+                seq = self.sequence(name)
+                if seq is not None:
+                    out.append(seq)
+                    continue
+                for phase in UVM_TASK_PHASES:
+                    task = self.activity(name, phase)
+                    if task is not None and task.overridden:
+                        out.append(task)
+            except Exception:  # noqa: BLE001
+                continue
+        # A link database's own tasks: a VIP sequence started inside the VIP.
+        known = {q.name.split("::")[-1] for q in out}
+        if self._link_paths:
+            self._linked_task("", "")      # reads the link databases
+            for views in self._link_views or ():
+                out.extend(q for q in views.sequences if q.name.split("::")[-1] not in known)
+        return out
+
+    def users(self, name: str):
+        """Everything that depends on sequence *name*, as a
+        :class:`~.uvm_catalog.SequenceUsers`."""
+        from .uvm_catalog import users_of
+
+        return users_of(self, name)
+
+    def origin(self, name: str) -> str:
+        """The link database a class was taken from; ``""`` for one the
+        sources declare, or that is not known."""
+        from ..svdb.declgen import LINK_SCHEME
+
+        key = (name or "").strip().split("::")[-1]
+        try:
+            symbol = self._class_index().get(key)
+        except Exception:  # noqa: BLE001
+            return ""
+        sym = getattr(symbol, "genericClass", None) or symbol
+        try:
+            file = self._source_manager.getFileName(sym.location)
+        except Exception:  # noqa: BLE001
+            return ""
+        if not file.startswith(LINK_SCHEME):
+            return ""
+        return file[len(LINK_SCHEME):].split("/", 1)[0]
 
     # -- the walk -------------------------------------------------------------
 
@@ -1674,7 +1872,7 @@ class UvmProvider:
             out = UvmStructure()
             for symbol in self._iter_classes():
                 name = getattr(symbol, "name", "")
-                if not name or name.startswith(_LIBRARY_PREFIX):
+                if not name or name.startswith(_LIBRARY_PREFIX) or self._linked(symbol):
                     continue
                 chain = base_chain(symbol)
                 if not is_component(chain) or is_port(chain):
@@ -1688,7 +1886,8 @@ class UvmProvider:
         # are classes), but a walk that met one has its view: keep it, so the
         # records hold every class a tree reaches.
         for key, (t, sites, connections) in self._views.items():
-            if key not in self._classes.types and not t.name.startswith(_LIBRARY_PREFIX):
+            if key not in self._classes.types and not t.name.startswith(_LIBRARY_PREFIX) \
+                    and key not in self._linked_keys:
                 self._classes.types[key] = t
                 self._classes.children[key] = [site.to_child() for site in sites]
                 self._classes.connections[key] = list(connections)
@@ -1985,7 +2184,7 @@ class UvmProvider:
 
     # -- body() ---------------------------------------------------------------
 
-    def _walk_sequence(self, name: str) -> UvmSequence | None:
+    def _walk_sequence(self, name: str, method: str = "") -> UvmSequence | None:
         try:
             classes = self._class_index()
         except Exception:
@@ -1994,14 +2193,26 @@ class UvmProvider:
         if symbol is None:
             return None
         chain = base_chain(_class_symbol(symbol))
-        if not is_sequence(chain):
+        if is_sequence(chain):
+            method = method or SEQUENCE_BODY
+            if method != SEQUENCE_BODY:
+                return None
+        elif is_component(chain):
+            method = method or DEFAULT_TASK_PHASE
+            if method not in UVM_TASK_PHASES:
+                return None
+        else:
             return None
+        if self._linked(symbol):
+            return self._linked_task(name, method)
 
-        subroutine, declared_by = self._body_subroutine(symbol)
+        subroutine, declared_by = self._body_subroutine(symbol, method)
         overridden = bool(subroutine) and not declared_by.startswith(_LIBRARY_PREFIX)
-        state = _ActivityState()
+        state = _ActivityState(owner=symbol, chain=tuple(chain),
+                               calling=[(declared_by, method)])
         body: list[UvmActivity] = []
         if overridden:
+            state.members = self._member_creates(symbol, method)
             body = self._activity_list(
                 _statements(getattr(subroutine, "body", None)), state, 0
             )
@@ -2013,10 +2224,13 @@ class UvmProvider:
             overridden=overridden,
             other=state.other,
             macros=tuple(state.macros),
+            method=method,
         )
 
-    def _body_subroutine(self, symbol: Any) -> tuple[Any, str]:
-        """The nearest ``body()`` in the chain, and the class declaring it.
+    def _body_subroutine(
+        self, symbol: Any, method: str = SEQUENCE_BODY
+    ) -> tuple[Any, str]:
+        """The nearest *method* in the chain, and the class declaring it.
 
         Walked rather than looked up on the class itself, because a sequence
         that does not override ``body()`` still *has* one --- the library's
@@ -2036,10 +2250,75 @@ class UvmProvider:
             for member in members:
                 if getattr(member, "kind", None) != SymbolKind.Subroutine:
                     continue
-                if getattr(member, "name", "") == SEQUENCE_BODY:
+                if getattr(member, "name", "") == method:
                     return member, getattr(current, "name", "") or ""
             current = _class_symbol(getattr(current, "baseClass", None))
         return None, ""
+
+    def _member_creates(self, symbol: Any, method: str) -> dict[str, tuple[str, str, str]]:
+        """Class member -> (type created into it, method that creates it, how).
+
+        Over every other method of the class and of its user base classes:
+        a sequence handle is commonly a member created in ``build_phase`` (or
+        ``pre_body``) and started in the task.  A member two methods create
+        with different types is left out --- which one runs first is a
+        question about the run.
+        """
+        from pyslang.ast import ExpressionKind, SymbolKind
+
+        found: dict[str, tuple[str, str, str]] = {}
+        clashing: set[str] = set()
+        current = symbol
+        for _ in range(MAX_DEPTH):
+            if current is None:
+                break
+            owner = getattr(current, "name", "") or ""
+            if owner.startswith(_LIBRARY_PREFIX):
+                break
+            try:
+                members = list(current)
+            except TypeError:
+                members = []
+            for member in members:
+                if getattr(member, "kind", None) != SymbolKind.Subroutine:
+                    continue
+                name = getattr(member, "name", "") or ""
+                # A base class's version of a method is read too: an override
+                # usually calls it through ``super``, and one that does not
+                # and creates differently is a clash, which drops the member.
+                if name == method:
+                    continue
+                body = getattr(member, "body", None)
+                if body is None:
+                    continue
+
+                def collect(node: Any, where: str = name) -> None:
+                    if getattr(node, "kind", None) != ExpressionKind.Assignment:
+                        return
+                    left = _unwrap(getattr(node, "left", None))
+                    if getattr(left, "kind", None) != ExpressionKind.NamedValue:
+                        return
+                    target = getattr(left, "symbol", None)
+                    if getattr(target, "kind", None) != SymbolKind.ClassProperty:
+                        return
+                    value = _unwrap(getattr(node, "right", None))
+                    type_name = registry_type_name(value) if value is not None else None
+                    by = BY_FACTORY
+                    if type_name is None and getattr(value, "kind", None) == ExpressionKind.NewClass:
+                        type_name, by = _type_name(getattr(value, "type", None)), BY_NEW
+                    if not type_name:
+                        return
+                    handle = getattr(target, "name", "") or ""
+                    if handle in found and found[handle][:1] + found[handle][2:] != (type_name, by):
+                        clashing.add(handle)
+                    found.setdefault(handle, (type_name, where, by))
+
+                try:
+                    body.visit(collect)
+                except Exception:  # noqa: BLE001
+                    continue
+            current = _class_symbol(getattr(current, "baseClass", None))
+        return {k: v for k, v in found.items() if k not in clashing}
 
     def _activity_list(
         self, statements: list, state: "_ActivityState", depth: int,
@@ -2097,11 +2376,15 @@ class UvmProvider:
         what picks ``SEQ_OR_ITEM`` over the ``uvm_sequence_base __seq`` local
         that real `` `uvm_do `` declares alongside it.
         """
-        inner = _ActivityState(types=dict(state.types))
+        inner = _ActivityState(types=dict(state.types), members=state.members,
+                               created_by=dict(state.created_by), props=set(state.props),
+                               owner=state.owner, chain=state.chain, calling=state.calling)
         produced: list[UvmActivity] = []
         for stmt in group:
             produced.extend(self._activity(stmt, inner, depth, macro=name))
         state.types.update(inner.types)
+        state.created_by.update(inner.created_by)
+        state.props.update(inner.props)
 
         candidates = [
             node
@@ -2141,15 +2424,34 @@ class UvmProvider:
             return [self._loop(stmt, state, depth, macro)]
 
         if kind == StatementKind.Timed:
-            timing = getattr(stmt, "timing", None)
-            text = _expression_text(getattr(timing, "expr", None))
-            node = UvmActivity(
-                kind=ACT_DELAY, label=f"#{text}" if text else "#",
-                macro=macro, location=_location_of(self._source_manager, stmt),
-            )
+            node = self._timing(getattr(stmt, "timing", None), stmt, macro)
             # `#10 foo();` is a delay *and* a statement.  Both are drawn.
             return [node, *self._activity(
                 getattr(stmt, "stmt", None), state, depth + 1, macro
+            )]
+
+        if kind == StatementKind.Wait:
+            text = _expression_text(getattr(stmt, "cond", None))
+            node = UvmActivity(
+                kind=ACT_WAIT, label=f"wait ({text})" if text else "wait",
+                macro=macro, location=_location_of(self._source_manager, stmt),
+            )
+            return [node, *self._activity(
+                getattr(stmt, "stmt", None), state, depth + 1, macro
+            )]
+
+        if kind == StatementKind.WaitFork:
+            return [UvmActivity(
+                kind=ACT_WAIT, label="wait fork", macro=macro,
+                location=_location_of(self._source_manager, stmt),
+            )]
+
+        if kind == StatementKind.EventTrigger:
+            text = _expression_text(getattr(stmt, "target", None))
+            arrow = "->>" if getattr(stmt, "isNonBlocking", False) else "->"
+            return [UvmActivity(
+                kind=ACT_ACTION, label=f"{arrow} {text}".strip(), macro=macro,
+                location=_location_of(self._source_manager, stmt),
             )]
 
         if kind == StatementKind.DisableFork:
@@ -2169,6 +2471,29 @@ class UvmProvider:
 
         state.other += 1
         return []
+
+    def _timing(self, timing: Any, stmt: Any, macro: str) -> UvmActivity:
+        """A time control as a node: a delay for ``#``/``##``, a wait for ``@``.
+
+        The two are different promises --- a delay always ends, an event wait
+        ends only if something else happens --- so they are drawn differently.
+        The label is rebuilt from the parts rather than read from the syntax,
+        whose leading trivia would carry the comment above the statement.
+        """
+        from pyslang.ast import TimingControlKind
+
+        timing_kind = getattr(timing, "kind", None)
+        location = _location_of(self._source_manager, stmt)
+        if timing_kind in (TimingControlKind.Delay, TimingControlKind.Delay3,
+                           TimingControlKind.OneStepDelay, TimingControlKind.CycleDelay):
+            text = _expression_text(getattr(timing, "expr", None))
+            if timing_kind == TimingControlKind.OneStepDelay:
+                text = "1step"
+            mark = "##" if timing_kind == TimingControlKind.CycleDelay else "#"
+            return UvmActivity(kind=ACT_DELAY, label=f"{mark}{text}",
+                               macro=macro, location=location)
+        return UvmActivity(kind=ACT_WAIT, label=_event_text(timing),
+                           macro=macro, location=location)
 
     def _block(
         self, stmt: Any, state: "_ActivityState", depth: int, macro: str
@@ -2260,7 +2585,7 @@ class UvmProvider:
     def _activity_expression(
         self, expr: Any, state: "_ActivityState", macro: str
     ) -> list[UvmActivity]:
-        from pyslang.ast import ExpressionKind
+        from pyslang.ast import ExpressionKind, SymbolKind
 
         expr = _unwrap(expr)
         kind = getattr(expr, "kind", None)
@@ -2272,11 +2597,16 @@ class UvmProvider:
             handle = _handle_name(getattr(expr, "left", None))
             value = _unwrap(getattr(expr, "right", None))
             type_name = registry_type_name(value) if value is not None else None
+            by = BY_FACTORY
             if type_name is None and getattr(value, "kind", None) == \
                     ExpressionKind.NewClass:
-                type_name = _type_name(getattr(value, "type", None))
+                type_name, by = _type_name(getattr(value, "type", None)), BY_NEW
             if handle and type_name:
                 state.types[handle] = type_name
+                state.created_by[handle] = by
+                left = _unwrap(getattr(expr, "left", None))
+                if getattr(getattr(left, "symbol", None), "kind", None) == SymbolKind.ClassProperty:
+                    state.props.add(handle)
                 return []
             state.other += 1
             return []
@@ -2286,7 +2616,15 @@ class UvmProvider:
             return []
 
         owner, method = _subroutine_owner(expr)
+        if method in _OBJECTION_METHODS and owner.startswith(_LIBRARY_PREFIX):
+            return [UvmActivity(
+                kind=ACT_OBJECTION, label=_OBJECTION_METHODS[method],
+                macro=macro, location=_location_of(self._source_manager, expr),
+            )]
         if owner != SEQUENCE_BASE:
+            call = self._call_node(expr, owner, method, state, macro)
+            if call is not None:
+                return [call]
             state.other += 1
             return []
         if method in _ABSORBED_METHODS:
@@ -2310,11 +2648,81 @@ class UvmProvider:
         else:
             state.other += 1
             return []
-        type_name = state.types.get(handle) or (chain[0] if chain else "")
+        created = state.types.get(handle)
+        resolved, created_in = (RESOLVED_CREATED, "") if created else (RESOLVED_DECLARED, "")
+        created_by = state.created_by.get(handle, "") if created else ""
+        if not created and handle in state.members and \
+                getattr(getattr(target, "symbol", None), "kind", None) == SymbolKind.ClassProperty:
+            created, created_in, created_by = state.members[handle]
+            resolved = RESOLVED_MEMBER
+        type_name = created or (chain[0] if chain else "")
+        sequencer = ""
+        if method == "start":
+            sequencer = _expression_text(_argument(expr, 0))
+            if sequencer == "null":
+                sequencer = ""
         return [UvmActivity(
             kind=node_kind, label=handle, type_name=type_name, macro=macro,
             location=_location_of(self._source_manager, expr),
+            sequencer=sequencer, resolved=resolved, created_in=created_in,
+            created_by=created_by,
         )]
+
+    def _call_node(
+        self, expr: Any, owner: str, method: str, state: "_ActivityState", macro: str,
+    ) -> UvmActivity | None:
+        """A call of a task of the walked class, with that task's body inlined.
+
+        Followed when the receiver is implicit, ``this`` or ``super`` and the
+        task belongs to a user class in the chain: those are the calls whose
+        target follows from the class alone.  An implicit or ``this.`` call
+        dispatches from the walked class, as a virtual task would at run time;
+        ``super.`` binds where slang bound it.  Functions are not followed:
+        they cannot start a sequence or consume time.
+        """
+        from pyslang.ast import SubroutineKind
+
+        subroutine = getattr(expr, "subroutine", None)
+        if getattr(subroutine, "subroutineKind", None) != SubroutineKind.Task:
+            return None
+        if not owner or owner.startswith(_LIBRARY_PREFIX) or owner not in state.chain:
+            return None
+        syntax = getattr(expr, "syntax", None)
+        receiver, _ = _call_target(getattr(syntax, "left", None) or syntax)
+        if receiver not in ("", "this", "super"):
+            return None
+        declared_by = owner
+        if receiver != "super" and state.owner is not None:
+            found, by = self._body_subroutine(state.owner, method)
+            if found is not None and not by.startswith(_LIBRARY_PREFIX):
+                subroutine, declared_by = found, by
+        label = f"super.{method}()" if receiver == "super" else f"{method}()"
+        location = _location_of(self._source_manager, expr)
+        key = (declared_by, method)
+        if key in state.calling or len(state.calling) > MAX_CALL_DEPTH:
+            return UvmActivity(kind=ACT_CALL, label=label, declared_by=declared_by,
+                               macro=macro, location=location)
+        inner = _ActivityState(
+            types={h: t for h, t in state.types.items() if h in state.props},
+            created_by={h: b for h, b in state.created_by.items() if h in state.props},
+            props=set(state.props), members=state.members, owner=state.owner,
+            chain=state.chain, calling=[*state.calling, key],
+        )
+        children = self._activity_list(
+            _statements(getattr(subroutine, "body", None)), inner, 0
+        )
+        # A member the task creates is the caller's member too, afterwards.
+        for handle in inner.props:
+            if handle in inner.types:
+                state.types[handle] = inner.types[handle]
+                state.created_by[handle] = inner.created_by.get(handle, "")
+                state.props.add(handle)
+        state.other += inner.other
+        for name in inner.macros:
+            if name not in state.macros:
+                state.macros.append(name)
+        return UvmActivity(kind=ACT_CALL, label=label, declared_by=declared_by,
+                           macro=macro, location=location, children=tuple(children))
 
     def _children_of(self, type_symbol: Any) -> list["_Site"]:
         """Every component a component of this type builds.
@@ -2372,7 +2780,18 @@ class UvmProvider:
                 sites.append(site)
             view = self._views[key] = (self._describe(name, type_symbol), sites,
                                        self._connections_of(name, type_symbol))
+            if self._linked(type_symbol):
+                self._linked_keys.add(key)
         return view
+
+    def _linked(self, type_symbol: Any) -> bool:
+        """Whether the class is declared in text generated from a link
+        database: its records are in that database (linking plan §1.5)."""
+        sym = getattr(type_symbol, "genericClass", None) or type_symbol
+        try:
+            return self._source_manager.getFileName(sym.location).startswith("svdb-link:")
+        except Exception:  # noqa: BLE001
+            return False
 
     def _creation_sites(self, type_symbol: Any) -> list["_Site"]:
         """Every create in every function this class defines, tagged with it."""
@@ -3183,6 +3602,19 @@ class _ActivityState:
     macros: list[str] = field(default_factory=list)
     #: Handle name -> type created into it, from factory or ``new``.
     types: dict[str, str] = field(default_factory=dict)
+    #: Class member -> (type, method) created elsewhere in the class
+    #: (:meth:`UvmProvider._member_creates`).
+    members: dict[str, tuple[str, str, str]] = field(default_factory=dict)
+    #: Handle name -> :data:`BY_FACTORY` or :data:`BY_NEW`, beside *types*.
+    created_by: dict[str, str] = field(default_factory=dict)
+    #: Handles in *types* that are class members: shared with called tasks.
+    props: set[str] = field(default_factory=set)
+    #: The class whose task is walked, to dispatch helper calls from.
+    owner: Any = None
+    #: Names of that class and its bases.
+    chain: tuple[str, ...] = ()
+    #: ``(declaring class, task)`` of each helper being inlined, outermost first.
+    calling: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _statements(stmt: Any) -> list:
@@ -3244,6 +3676,31 @@ def _macro_key(source_manager: Any, stmt: Any) -> tuple[str, str, int] | None:
         )
     except Exception:
         return None
+
+
+def _event_text(timing: Any) -> str:
+    """An event control as written: ``@(posedge clk)``, ``@(a or b)``, ``@*``."""
+    from pyslang.ast import TimingControlKind
+
+    def one(event: Any) -> str:
+        edge = str(getattr(event, "edge", "") or "").rsplit(".", 1)[-1]
+        prefix = {"PosEdge": "posedge ", "NegEdge": "negedge ",
+                  "BothEdges": "edge "}.get(edge, "")
+        return prefix + _expression_text(getattr(event, "expr", None))
+
+    kind = getattr(timing, "kind", None)
+    if kind == TimingControlKind.ImplicitEvent:
+        return "@*"
+    if kind == TimingControlKind.SignalEvent:
+        return f"@({one(timing)})"
+    if kind == TimingControlKind.EventList:
+        events = [one(e) for e in getattr(timing, "events", None) or ()]
+        return f"@({' or '.join(events)})" if events else "@"
+    if kind == TimingControlKind.RepeatedEvent:
+        count = _expression_text(getattr(timing, "expr", None))
+        inner = _event_text(getattr(timing, "event", None))
+        return f"repeat ({count}) {inner}" if count else inner
+    return "@"
 
 
 def _subroutine_owner(call: Any) -> tuple[str, str]:

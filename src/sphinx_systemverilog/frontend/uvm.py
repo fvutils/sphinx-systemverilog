@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ..model.objects import SourceRef
-from ..model.uvm import (_LIBRARY_PREFIX, DEFAULT_MAX_COMPONENTS, MAX_DEPTH, STATE_OK, UvmActivity, UvmBinding, UvmBridge, UvmCall, UvmChild, UvmConfig,
+from ..model.uvm import (_LIBRARY_PREFIX, DEFAULT_TASK_PHASE, SEQUENCE_BODY, UVM_TASK_PHASES, DEFAULT_MAX_COMPONENTS, MAX_DEPTH, STATE_OK, UvmActivity, UvmBinding, UvmBridge, UvmCall, UvmChild, UvmConfig,
                          UvmConfigAccess, UvmConnection, UvmEndpoint, UvmInterfaceDriver, UvmMethod,
                          UvmOverride, UvmOverrides, UvmPort, UvmSequence, UvmStructure, UvmType)
 
@@ -46,7 +46,9 @@ LocFn = Callable[[Any], "dict | None"]
 
 @dataclass
 class UvmViews:
-    """What the UVM provider answers without an argument, plus every sequence."""
+    """What the UVM provider answers without an argument, plus every
+    behavioural task: each sequence's ``body()`` and each task phase a
+    component writes."""
 
     structure: Any = None
     #: Every component class's own records, keyed by qualified name.
@@ -79,12 +81,22 @@ def views(provider: Any) -> UvmViews:
                    overrides=_quietly(provider.overrides, "factory overrides"),
                    bridge=_quietly(provider.bridge, "virtual-interface bindings"))
     classes = _quietly(provider._class_index, "class index") or {}
-    for name in classes:
-        if name.startswith(_LIBRARY_PREFIX):
+    for name, symbol in classes.items():
+        # A linked class's tasks are in the database it was linked from.
+        if name.startswith(_LIBRARY_PREFIX) or provider._linked(symbol):
             continue
         seq = _quietly(lambda: provider.sequence(name), f"sequence {name}")
         if seq is not None:
             out.sequences.append(seq)
+            continue
+        # A component's task phases are behaviour too.  Only the ones user
+        # code writes: a component that inherits the library's empty
+        # run_phase has nothing to draw, and storing that for every
+        # component would be most of the records.
+        for phase in UVM_TASK_PHASES:
+            task = _quietly(lambda: provider.activity(name, phase), f"{phase} of {name}")
+            if task is not None and task.overridden:
+                out.sequences.append(task)
     return out
 
 
@@ -225,6 +237,30 @@ def records(v: UvmViews, loc: LocFn) -> list[dict]:
             rec["body"] = [_activity(a, loc) for a in q.body]
         out.append(rec)
     return out
+
+
+def task_from(views: UvmViews, name: str, method: str = "") -> tuple[bool, UvmSequence | None]:
+    """Class *name*'s behavioural task *method* from stored *views*, and
+    whether the views know the class at all (as a sequence or a component).
+
+    Only task phases user code writes are stored: any other task phase of a
+    known component is answered as an empty, not-overridden task.  An empty
+    *method* is the class's natural one: ``body`` for a sequence, else
+    ``run_phase``.
+    """
+    key = (name or "").strip().split("::")[-1]
+    found = [q for q in views.sequences if q.name.split("::")[-1] == key]
+    component = None
+    if views.classes is not None:
+        component = next((t for t in views.classes.types.values() if t.name.split("::")[-1] == key), None)
+    if not found and component is None:
+        return False, None
+    if not method:
+        method = SEQUENCE_BODY if any(q.method == SEQUENCE_BODY for q in found) else DEFAULT_TASK_PHASE
+    stored = next((q for q in found if q.method == method), None)
+    if stored is not None or method not in UVM_TASK_PHASES or component is None:
+        return True, stored
+    return True, UvmSequence(name=component.name, chain=component.chain, method=method)
 
 
 # -- reading back (D4-IMPL-2) ----------------------------------------------------

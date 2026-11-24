@@ -33,6 +33,10 @@ This feature is being built in phases; this page grows with it.
 | `sv:uvm-config` | What is set through `config_db`, and does anything read it? | **available** |
 | `sv:uvm-schematic` | How are the components wired together? | **available** |
 | `sv:uvm-sequence` | What does this sequence do? | **available** |
+| `sv:uvm-activity` | What does this test's `run_phase` do? | **available** |
+| `sv:uvm-sequence-catalog` | Which sequences does this test or sequence depend on? | **available** |
+| `sv:uvm-sequence-tree` | Which sequences does this test start, where, and on which sequencer? | **available** |
+| `sv:uvm-sequence-users` | Which tests and sequences depend on this sequence? | **available** |
 | `sv:uvm-binding` | Which RTL interface does this agent drive? | **available** |
 | `sv:uvm-used-by` | Which components build this one? | **available** |
 
@@ -285,6 +289,10 @@ the option mean something no reader could predict.
 | diamond | a decision | `if` / `case`, labelled with the condition as written |
 | solid bar | a fork, and its join | `StatementBlockKind` |
 | dashed cluster | a loop, labelled with its controlling expression | the loop statement |
+| purple rounded box | a delay | `#` / `##` |
+| orange dashed box | a wait, which ends only if something else happens | `@(...)`, `wait (...)`, `wait fork` |
+| green signal shape | an objection raised or dropped | `raise_objection` / `drop_objection` |
+| dotted cluster | a task of the class that is called, holding that task's steps | `helper()`, `this.helper()`, `super.run_phase()` |
 
 Two of those rows are the reason this works as well as it does.
 
@@ -329,9 +337,219 @@ mostly not control flow, and a diagram of only the constructs it understands
 would be claiming the task is shorter than it is. Declarations are neither drawn
 nor counted: `cfg_seq cfg;` is part of writing a task, not part of what it does.
 
+(uvm-activity)=
+## `sv:uvm-activity`
+
+```rst
+.. sv:uvm-activity:: seq_test
+
+.. sv:uvm-activity:: seq_test
+   :method: main_phase
+   :depth: 2
+```
+
+A component's task phase, drawn exactly as [`sv:uvm-sequence`](uvm-sequence)
+draws a `body()`. A test's `run_phase` runs behaviour the same way a sequence's
+`body()` does: it raises an objection, starts sequences, forks and waits. So it
+gets the same diagram, and its sub-sequences open with `:depth:` just as they do
+from a sequence.
+
+| Option | Meaning |
+|---|---|
+| `:method:` | The task to draw. For a component, any task phase (`run_phase`, `main_phase`, `reset_phase`, ...); the default is `run_phase`. For a sequence, only `body`, which is also its default. |
+| `:depth:` | As for `sv:uvm-sequence`. |
+| `:optional:` | Render nothing, and warn about nothing, if the class has no such task. |
+| `:catalog:` | Add the [sub-sequence catalog](uvm-sequence-catalog) under the diagram. `sv:uvm-sequence` takes it too. |
+| `:tree:` | Add the [sequence tree](uvm-sequence-tree) under the diagram. `sv:uvm-sequence` takes it too. |
+| `:used-by:` | Add the [sequence users](uvm-sequence-users) of the class under the diagram. Meant for `sv:uvm-sequence`. |
+
+### Helper tasks and `super.`
+
+A `run_phase` often does little itself and calls tasks that do the work:
+`super.run_phase(phase)`, then `run_traffic()`. Each such call is drawn in
+place, as a dotted cluster labelled with the call, holding the called task's
+own steps; the catalog, tree and users follow it too, and the catalog's
+Started at column names the calls a start is reached through
+(`in super.run_phase() → traffic()`). This applies to a sequence's `body()` as
+well.
+
+A call is followed when it calls a **task** of the class or a user base class,
+with no receiver, `this.` or `super.`. A call without `super.` is dispatched
+from the class being drawn, as a virtual task would be at run time, so a base
+class's `run_phase` calling `traffic()` shows the subclass's `traffic()`. A task
+already being called (recursion), or calls nested more than eight deep, are
+drawn as a single box. Functions are not followed: they can neither start a
+sequence nor consume time. A call on another object (`env.do_it()`) is not
+followed either.
+
+A function phase such as `build_phase` is refused with a warning: it cannot
+consume time, so it has no behaviour to draw. A component that inherits an empty
+task phase gets a sentence saying so rather than an empty diagram.
+
+Only phases a user class writes are stored in the [design
+database](database.md); a phase a component inherits from the library is
+answered as empty without one.
+
+(uvm-sequence-catalog)=
+## `sv:uvm-sequence-catalog`
+
+```rst
+.. sv:uvm-sequence-catalog:: seq_test
+
+.. sv:uvm-sequence-catalog:: main_seq
+```
+
+Every sequence a behavioural task depends on, each listed once: the sequences
+it starts, the sequences those start, and so on down. The activity diagram
+shows one task at a time. The catalog is the whole closure, which is what
+answers "what do we depend on?" — for a test's `run_phase` or a sequence's
+`body()` alike.
+
+| Option | Meaning |
+|---|---|
+| `:method:` | The task, as for [`sv:uvm-activity`](uvm-activity). |
+| `:optional:` | Render nothing, and warn about nothing, if the class has no such task. |
+
+Each row is one sequence type:
+
+| Column | Shows |
+|---|---|
+| Sequence | The type, linked to its documentation. Marked `(recursive)` if it can start itself again, `(no body found)` if its `body()` is not available, `(empty body)` if it inherits the library's, and `(possibly overridden)` if a factory override that is not certain may replace it. |
+| Started by | The classes whose task starts it: the root for a direct dependency, other sequences for an indirect one. |
+| Type from | `created` when a create or `new` for the handle is in the task that starts it; `created in build_phase()` (or another method) for a class member created elsewhere in the class or its base classes; `declared type only` when only the handle's declaration says what it is. `, overridden from X` follows when a factory override replaced the created type `X`. |
+| Started at | Each `start`, as `file:line`, with the sequencer passed to it as written, and the helper tasks it is reached through. |
+| Origin | *this design*, or the name of the [linked database](linking.md) the sequence comes from. |
+| Drives | The transaction types its own `body()` sends with `start_item` or `` `uvm_do ``. |
+
+Rows are ordered by depth, so the sequences the root starts itself come first.
+A sequence started both directly and through another counts as direct.
+
+`declared type only` is a warning to read, not an error. A handle passed in or
+fetched from `config_db` has only its declaration to go on. A member that two
+methods create with different types is treated the same way, since which runs
+first is a question about the run.
+
+### Factory overrides
+
+For a component's task, a factory **type** override that the class or one of
+its base classes registers **unconditionally** is applied: a sequence created
+through the factory as `base_seq` is listed as the replacement `fast_seq`, with
+`created, overridden from base_seq`, and what `fast_seq` starts is listed too.
+A note under the table names each applied override. A handle built with `new`
+is not replaced, because `new` bypasses the factory.
+
+Every other override of a listed sequence is shown as possible, not applied: a
+conditional one, a per-instance one, or one registered by another class (such
+as a subclass of the test). A note lists them, and what their replacements
+start is not followed. A sequence's own `body()` applies no override, since
+which test runs it is not the sequence's to say.
+
+The base-class rule assumes an overriding `build_phase` calls
+`super.build_phase()`, as UVM code nearly always does.
+
+### Linked databases
+
+A sequence from a [linked database](linking.md) is read from that database's
+records: its Origin is the database's name, and what it starts is listed as for
+any other. The testbench's own database does not copy it. A database linked
+with `role: external` counts as well.
+
 A sequence that does not override `body()` is said rather than drawn. An empty
 diagram would read as "this sequence does nothing", which is a claim about the
 testbench rather than about the source.
+
+(uvm-sequence-tree)=
+## `sv:uvm-sequence-tree`
+
+```rst
+.. sv:uvm-sequence-tree:: seq_test
+```
+
+The sequences a behavioural task starts, as a nested list: each start in
+source order, with the starts inside it nested below. Where the catalog lists
+each sequence once, the tree shows every start in its place, and says for each:
+
+- the handle and the type, linked to its documentation, with the type
+  resolution as in the catalog (factory overrides applied the same way);
+- the loops, decision arms and fork branches around it (`in repeat (2)`,
+  `in do_cfg: yes`, `in fork (join_any): traffic`);
+- the helper tasks it is reached through (`through do_steps()`);
+- the sequencer as written and, for a component's task, the component instance
+  it names (`on env.agt.sqr = uvm_test_top.env.agt.sqr (agt_sequencer)`).
+
+A sequence is opened where it is first started. A later start of it is marked
+`(shown above)` rather than opened again, and one that starts itself again is
+marked `(recursive)`.
+
+| Option | Meaning |
+|---|---|
+| `:method:` | The task, as for [`sv:uvm-activity`](uvm-activity). |
+| `:optional:` | Render nothing, and warn about nothing, if the class has no such task. |
+
+### Sequencer instances
+
+For a component's task, sequencers are looked up in the
+[component tree](uvm-tree-resolved) built from that component, overrides applied. A
+handle path from the component (`env.agt.sqr`, `this.env.vseqr`) is followed
+child by child. Inside a started sequence, `m_sequencer` (or no sequencer at
+all, as `` `uvm_do `` passes) is the sequencer that sequence runs on, and
+`p_sequencer.agt_sqr` is a handle reached from it: a child of that sequencer,
+or a handle it holds that a `connect_phase` assigns, which is how a virtual
+sequencer is wired. A sequencer fetched from `config_db`, passed in, or held in
+a local variable is not followed. A sequence's own tree has no sequencer to
+start from, so it shows sequencers only as written. The children of a sequence
+marked `(shown above)` are those of its first start, so they show the
+sequencer of that start.
+
+(uvm-sequence-users)=
+## `sv:uvm-sequence-users`
+
+```rst
+.. sv:uvm-sequence-users:: cfg_seq
+```
+
+The reverse of the catalog: everything that depends on one sequence. It is the
+question asked before changing a sequence: who is affected?
+
+| Option | Meaning |
+|---|---|
+| `:optional:` | Render nothing, and warn about nothing, if there is no such sequence. |
+
+A table lists every place the sequence is started (Started by, Type from,
+Started at, as in the catalog). Below it, two lists name every component task,
+such as a test's `run_phase`, and every sequence whose catalog includes it,
+each with how far away it is (`directly`, or through so many sequence levels).
+It is read off the same catalogs, so the two views always agree. A test that
+reaches the sequence only through a factory override it registers is a user.
+
+A sequence nothing starts is reported as such. If a factory override can put
+it in place of another sequence, that is said as well.
+
+### From the command line
+
+`svdb uvm-sequences` prints the same catalog, tree and users from database
+files, as JSON (the default) or text, for scripts and CI checks:
+
+```console
+$ svdb uvm-sequences -d tb.svdb seq_test                     # the catalog of seq_test.run_phase()
+$ svdb uvm-sequences -d tb.svdb seq_test --view tree --format text
+$ svdb uvm-sequences -d tb.svdb cfg_seq --view users         # what depends on cfg_seq
+$ svdb uvm-sequences -d tb.svdb --view tasks --format text   # every test task and sequence body
+$ svdb uvm-sequences -d tb.svdb --follow-links seq_test      # with linked VIP databases
+```
+
+| Option | Meaning |
+|---|---|
+| `NAME` | The test or other component, or the sequence. Not used with `--view tasks`. |
+| `-d DB` | A database file; repeat for linked databases, or use `--follow-links`. |
+| `--view` | `catalog` (default), `tree`, `users` or `tasks`. |
+| `--method` | The task, as `:method:` above. |
+| `--format` | `json` (default) or `text`. |
+| `-o FILE` | Write to a file instead of standard output. |
+
+The JSON holds the fields of the catalog, tree or users, with empty values
+left out and locations as `{"file", "line"}`. It exits 1 when the name is not a
+behavioural task (or, for `users`, not a sequence).
 
 (uvm-binding)=
 ## `sv:uvm-binding`

@@ -24,8 +24,41 @@ package:
     # svdb: JSON Schema validation of interchange files (tests, `svdb validate`).
     - name: jsonschema
       src: pypi
+    # Runs elkjs in an embedded V8 at doc-build time.
+    - name: mini-racer
+      src: pypi
+    # Block-diagram layout engine; the same pin as in `default`, whose doc explains it.
+    - name: elkjs
+      description: Eclipse Layout Kernel compiled to JavaScript; lays out block diagrams.
+      url: https://registry.npmjs.org/elkjs/-/elkjs-0.12.1.tgz
+      type: raw
     - name: uvm
       url: https://www.accellera.org/images/downloads/standards/uvm/UVM-1800.2-2020.3.1.tar.gz
 
-  - name: default 
-    deps: []
+  - name: default
+    deps:
+    # Runs elkjs in an embedded V8 at doc-build time.
+    - name: mini-racer
+      src: pypi
+    # Block-diagram layout engine (a runtime asset, so it is in the release set).
+    - name: elkjs
+      description: Eclipse Layout Kernel compiled to JavaScript; lays out block diagrams.
+      doc: |
+        elkjs is an npm package, not on PyPI, so it is fetched as the pinned npm
+        tarball and never committed. The post-update hook below copies
+        lib/elk.bundled.js and LICENSE.md into src/sphinx_systemverilog/diagram/js/
+        (git-ignored), and package-data ships them in the wheel and sdist. It is a
+        runtime asset: mini-racer runs it at build time and the browser runs the
+        same file in interactive mode. CI jobs without ivpm use
+        scripts/fetch_elkjs.py, which pins the same version. Licence:
+        EPL-2.0 OR GPL-3.0-or-later, shipped unmodified with its licence file.
+      url: https://registry.npmjs.org/elkjs/-/elkjs-0.12.1.tgz
+      type: raw
+
+  hooks:
+  - name: elkjs
+    event: post-update
+    python: |
+      import runpy, sys
+      sys.argv = ["fetch_elkjs", "--from", "packages/elkjs"]
+      runpy.run_path("scripts/fetch_elkjs.py", run_name="__main__")

@@ -70,14 +70,14 @@ def split_leading_trivia(token: Any) -> tuple[list[str], list[str]]:
 def _starts_buffer(token: Any, trivia: list) -> bool:
     """True when nothing but *trivia* precedes *token* in its source buffer.
 
-    The token's offset is the count of characters before it, so if the trivia
+    The token's offset is the count of bytes before it, so if the trivia
     accounts for all of them, this is the first token in the file.
     """
     try:
         offset = token.location.offset
     except Exception:
         return False
-    return offset == sum(len(_raw(t)) for t in trivia)
+    return offset == sum(len(_raw(t).encode("utf-8")) for t in trivia)
 
 
 def iter_comment_blocks(token: Any) -> list[list[str]]:

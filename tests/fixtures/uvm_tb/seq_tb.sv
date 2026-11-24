@@ -164,6 +164,41 @@ package seq_tb_pkg;
     endfunction
   endclass
 
+  // -- the catalog's harder cases ---------------------------------------------
+  //
+  // rec_seq starts itself, so its catalog must cut the cycle rather than walk
+  // it forever; and it starts a handle someone else filled in, whose type is
+  // only the declared one.
+
+  class leaf_seq extends uvm_sequence #(seq_item);
+    `mini_object_utils(leaf_seq)
+    function new(string name = "leaf_seq");
+      super.new(name);
+    endfunction
+    virtual task body();
+      seq_item it;
+      `mini_do(it)
+    endtask
+  endclass
+
+  class rec_seq extends uvm_sequence #(seq_item);
+    `mini_object_utils(rec_seq)
+    int unsigned level;
+    leaf_seq handed_in;
+    function new(string name = "rec_seq");
+      super.new(name);
+    endfunction
+    virtual task body();
+      rec_seq again;
+      if (level > 0) begin
+        again = rec_seq::type_id::create("again");
+        again.level = level - 1;
+        again.start(m_sequencer);
+      end
+      handed_in.start(m_sequencer);
+    endtask
+  endclass
+
   // -- a driver and a sequencer, so the sequences have somewhere to run ------
 
   class seq_driver extends uvm_driver;
@@ -205,6 +240,23 @@ package seq_tb_pkg;
     virtual function void build_phase(uvm_phase phase);
       env = seq_env::type_id::create("env", this);
     endfunction
+    // A test's run_phase runs behaviour exactly as a sequence's body() does,
+    // and is drawn the same way --- plus the objections and event waits that
+    // are particular to a phase.
+    event settled;
+    virtual task run_phase(uvm_phase phase);
+      main_seq seq;
+      phase.raise_objection(this);
+      seq = main_seq::type_id::create("seq");
+      fork
+        seq.start(env.seqr);
+        #1us;
+      join_any
+      -> settled;
+      @(settled);
+      wait fork;
+      phase.drop_objection(this);
+    endtask
   endclass
 
 endpackage : seq_tb_pkg

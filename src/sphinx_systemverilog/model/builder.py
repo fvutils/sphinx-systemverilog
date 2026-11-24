@@ -60,6 +60,7 @@ class ModelBuilder:
         document_macros: bool = True,
         external: Iterable[str] | None = None,
         external_files: dict[str, str] | None = None,
+        links: Iterable[str] | None = None,
     ) -> None:
         self.doc_style = doc_style
         self.include_dirs = list(include_dirs or [])
@@ -80,6 +81,11 @@ class ModelBuilder:
         self.source_manager: Any = None
         #: Error/fatal diagnostics rendered as strings; surfaced as warnings.
         self.diagnostics: list[str] = []
+        #: Link databases (``svdb build --link``): names the sources use but do
+        #: not define are compiled from declarations generated from these.
+        self.links = list(links or [])
+        #: What the compile took from each link database (``Link`` records).
+        self.linked: list[Any] = []
         #: Count of suppressed non-error (lint) diagnostics; surfaced as info.
         self.suppressed_count: int = 0
         self._nd_index = None
@@ -91,14 +97,31 @@ class ModelBuilder:
         return self._build([tree])
 
     def build_from_files(self, paths: Iterable[str]) -> list[SvObject]:
+        paths = [str(p) for p in paths]
         sm, options = self._parse_options()
+        linker = None
+        if self.links:
+            from ..frontend.link import Linker
+
+            if sm is None:
+                sm, options = pyslang.SourceManager(), pyslang.Bag([pyslang.parsing.PreprocessorOptions()])
+            linker = Linker(self.links, self.include_dirs)
+            linker.preinclude(sm, paths)
         trees = []
         for p in paths:
             if sm is not None:
-                trees.append(SyntaxTree.fromFile(str(p), sm, options))
+                trees.append(SyntaxTree.fromFile(p, sm, options))
             else:
-                trees.append(SyntaxTree.fromFile(str(p)))
-        return self._build(trees)
+                trees.append(SyntaxTree.fromFile(p))
+        if linker is None:
+            return self._build(trees)
+        try:
+            comp = linker.link(sm, trees)
+            self.linked = linker.used()
+            self.diagnostics.extend(linker.errors)
+            return self._build(trees, linked=linker.trees, comp=comp)
+        finally:
+            linker.close()
 
     def _parse_options(self):
         """Build a shared SourceManager + options Bag honoring include dirs/defines.
@@ -123,19 +146,20 @@ class ModelBuilder:
 
     # -- core -----------------------------------------------------------------
 
-    def _build(self, trees: list[Any]) -> list[SvObject]:
-        comp = Compilation()
-        source_manager = None
-        for tree in trees:
-            comp.addSyntaxTree(tree)
-            if source_manager is None:
-                source_manager = tree.sourceManager
+    def _build(self, trees: list[Any], linked: list[Any] = (), comp: Any = None) -> list[SvObject]:
+        """*linked* trees (generated from link databases) are compiled, not
+        documented; *comp*, when given, already holds every tree."""
+        source_manager = trees[0].sourceManager if trees else None
+        if comp is None:
+            comp = Compilation()
+            for tree in [*trees, *linked]:
+                comp.addSyntaxTree(tree)
         self._collect_diagnostics(comp)
         self._build_nd_index(trees, source_manager)
 
         roots: list[SvObject] = []
         for pkg in comp.getPackages():
-            if pkg.name in ("std", "$unit"):
+            if pkg.name in ("std", "$unit") or _is_linked(source_manager, pkg.location):
                 continue
             obj = self._build_scope(
                 pkg, KIND_PACKAGE, source_manager, pkg.name, include_inline=True
@@ -145,7 +169,7 @@ class ModelBuilder:
         # Modules/interfaces/programs (Phase 2 fleshes out ports/params).
         for defn in comp.getDefinitions():
             kind = _DEFINITION_KINDS.get(str(getattr(defn, "definitionKind", "")))
-            if kind is None:
+            if kind is None or _is_linked(source_manager, defn.location):
                 continue
             obj = self._build_scope(
                 defn, kind, source_manager, defn.name, include_inline=True
@@ -245,8 +269,8 @@ class ModelBuilder:
         engine = pyslang.DiagnosticEngine(comp.sourceManager)
         suppressed = 0
         for diag in diags:
-            if self._is_external(diag):
-                continue
+            if self._is_external(diag) or _is_linked(comp.sourceManager, diag.location):
+                continue        # in generated text: the linker reports those
             try:
                 severity = engine.getSeverity(diag.code, diag.location)
             except Exception:
@@ -338,6 +362,9 @@ class ModelBuilder:
             base = getattr(class_sym, "baseClass", None)
             if base is not None and getattr(base, "name", ""):
                 obj.extends = base.name
+                generic = getattr(base, "genericClass", None) or base
+                if _is_linked(sm, getattr(generic, "location", None)):
+                    obj.extends_target = getattr(generic, "hierarchicalPath", None) or None
         self._apply_nd(obj, sym)
         if sym.kind == SymbolKind.Definition:
             self._build_module_header(sym, obj, sm, qname)
@@ -348,6 +375,7 @@ class ModelBuilder:
     def _build_members(self, scope: Any, parent: SvObject, sm: Any, qname: str) -> None:
         members: list[SvObject] = []
         trailing: list[list[str]] = []
+        order: dict[int, tuple] = {}
         for sym in _iter_scope(scope):
             if not _has_real_location(sym, sm):
                 continue
@@ -355,6 +383,7 @@ class ModelBuilder:
             if child is None:
                 continue
             child.from_macros = macro_chain(sm, getattr(sym, "location", None))
+            order[id(child)] = _stream_key(sm, getattr(sym, "location", None))
             members.append(child)
             trailing.append(self._trailing_for(sym))
 
@@ -366,7 +395,10 @@ class ModelBuilder:
             if inline and not prev.is_documented:
                 prev.raw_doc = clean_comment_block(inline)
 
-        members.sort(key=lambda m: (m.location.line if m.location else 1 << 30))
+        # Source order across `include`d files, not line numbers alone: a
+        # package spread over files would otherwise put uses before
+        # declarations.
+        members.sort(key=lambda m: order[id(m)])
         parent.children = members
 
     def _build_constraint(
@@ -490,10 +522,15 @@ class ModelBuilder:
         out: list[SvObject] = []
         decl = getattr(item, "declaration", item)
         doc = _token_leading_doc(item.getFirstToken())
+        words = {getattr(t, "valueText", "") or str(t).strip()
+                 for node in (getattr(item, "qualifiers", None), getattr(decl, "modifiers", None))
+                 for t in node or ()}
+        quals = [q for q in ("rand", "randc", "static", "const", "var", "local", "protected") if q in words]
         for declarator in _syntax_elements(getattr(decl, "declarators", None)):
             name = declarator.name.valueText
             out.append(SvObject(
                 kind=KIND_PROPERTY, name=name, qualified_name=_join(qname, name),
+                qualifiers=list(quals),
                 signature=_node_source(item, sm),
                 location=resolve_location(sm, declarator.name.location),
                 raw_doc=doc, doc_style=self.doc_style,
@@ -633,8 +670,7 @@ class ModelBuilder:
         type_str, dims = _written_type(sym) or _split_unpacked(str(getattr(sym, "type", "")) or "")
         sig = f"{type_str} {sym.name}{dims}".strip()
         obj = self._build_simple(sym, KIND_PROPERTY, sm, qname, signature=sig)
-        if str(getattr(sym, "randMode", "")) in ("RandMode.Rand", "RandMode.RandC"):
-            obj.qualifiers.append("rand")
+        obj.qualifiers.extend(_property_qualifiers(sym))
         vis = _visibility(sym)
         if vis:
             obj.qualifiers.append(vis)
@@ -874,6 +910,51 @@ def _cst_class_qualifier(syntax: Any) -> str | None:
     return word if word in ("virtual", "interface") else None
 
 
+def _is_linked(sm: Any, loc: Any) -> bool:
+    """Whether *loc* lies in text generated from a link database."""
+    try:
+        return sm is not None and sm.getFileName(loc).startswith("svdb-link:")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _stream_key(sm: Any, loc: Any) -> tuple:
+    """Where *loc* falls in its compilation unit's preprocessed text: the root
+    buffer, then the offset at each level of `` `include `` down to *loc*
+    (after macro expansion).  No location sorts last."""
+    try:
+        loc = sm.getFullyExpandedLoc(loc)
+        offsets = []
+        while loc is not None and loc.buffer.id != 0:
+            offsets.append(loc.offset)
+            inc = sm.getIncludedFrom(loc.buffer)
+            if inc.buffer.id == 0:
+                return (0, loc.buffer.id, *reversed(offsets))
+            loc = sm.getFullyExpandedLoc(inc)
+    except Exception:  # noqa: BLE001 - a binding without these: no order
+        pass
+    return (1,)
+
+
+def _property_qualifiers(sym: Any) -> list[str]:
+    """``rand``/``randc``, ``static``, ``const`` and ``var`` of a class property,
+    in that order (visibility is added by the caller)."""
+    rand = str(getattr(sym, "randMode", ""))
+    quals = ["randc"] if rand == "RandMode.RandC" else ["rand"] if rand == "RandMode.Rand" else []
+    words: set[str] = set()
+    decl = getattr(getattr(sym, "syntax", None), "parent", None)
+    for node in (getattr(decl, "modifiers", None), getattr(getattr(decl, "parent", None), "qualifiers", None)):
+        for tok in node or ():
+            words.add(getattr(tok, "valueText", "") or str(tok).strip())
+    if "static" in words:
+        quals.append("static")
+    if "const" in words:
+        quals.append("const")
+    if "var" in words:
+        quals.append("var")
+    return quals
+
+
 def _visibility(sym: Any) -> str | None:
     vis = str(getattr(sym, "visibility", ""))
     if vis == "Visibility.Local":
@@ -1014,7 +1095,14 @@ def _node_source(node: Any, sm: Any) -> str:
     try:
         start = node.getFirstToken().range.start
         end = node.getLastToken().range.end
+        if sm.isMacroLoc(start) or sm.isMacroLoc(end):
+            # Expanded from a macro: there is no source text to slice.
+            return _tokens_text(node)
         text = sm.getSourceText(start.buffer)
+        if not text.isascii():
+            # Offsets count bytes: a multi-byte character before *node* (a
+            # typographic apostrophe in a comment) would shift a str slice.
+            return _normalize_ws(text.encode("utf-8")[start.offset:end.offset].decode("utf-8", "replace"))
         return _normalize_ws(text[start.offset:end.offset])
     except Exception:
         return _normalize_ws(str(node))

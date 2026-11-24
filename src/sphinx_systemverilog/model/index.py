@@ -155,6 +155,7 @@ def build_index(
     uvm_max_components: int = DEFAULT_MAX_COMPONENTS,
     external: Iterable[str] | None = None,
     external_sources: Any = None,
+    links: Iterable[str] | None = None,
     use_cache: bool = True,
 ) -> SvIndex:
     """Build an :class:`SvIndex` from the configured sources.
@@ -170,7 +171,7 @@ def build_index(
         source_dirs, build_units, doc_style, include_dirs, defines, base_path,
         nodocs_policy, document_macros, structure_tops, structure_max_instances,
         uvm_root, uvm_blackbox, uvm_blackbox_bases, uvm_max_components, external,
-        external_sources,
+        external_sources, links,
     )
     files = list(key[0])
     external_files = external_source_files(external_sources, base_path)
@@ -188,6 +189,7 @@ def build_index(
         document_macros=document_macros,
         external=external,
         external_files=external_files,
+        links=_resolve(links, base_path),
     )
     index = SvIndex()
     if files:
@@ -220,6 +222,8 @@ def build_index(
                 max_components=uvm_max_components,
             )
         )
+        index.uvm_provider.attach_links(
+            lk.path for lk in getattr(builder, "linked", None) or ())
 
     if use_cache:
         _INDEX_CACHE[key] = index
@@ -243,6 +247,7 @@ def index_key(
     uvm_max_components: int = DEFAULT_MAX_COMPONENTS,
     external: Iterable[str] | None = None,
     external_sources: Any = None,
+    links: Iterable[str] | None = None,
 ) -> tuple:
     """What a build of these inputs depends on: the files to parse (first),
     every option, and the modification time of every candidate source file.
@@ -266,7 +271,23 @@ def index_key(
         uvm_max_components, tuple(external or ()),
         tuple(ext_files.items()),
         mtimes,
+        # A rebuilt link database changes what the sources compile against.
+        tuple((p, _file_digest(p)) for p in _resolve(links, base_path)),
     )
+
+
+def _resolve(paths: Iterable[str] | None, base_path: str | None) -> list[str]:
+    return [p if os.path.isabs(p) or not base_path else os.path.join(base_path, p) for p in paths or ()]
+
+
+def _file_digest(path: str) -> str:
+    import hashlib
+
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return ""
 
 
 def _mtime_signature(

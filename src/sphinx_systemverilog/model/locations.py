@@ -12,13 +12,17 @@ from typing import Any
 
 from .objects import SourceRef
 
+#: Buffer-name prefix of linked text (``svdb.declgen.LINK_SCHEME``).
+LINK_SCHEME = "svdb-link:"
+
 
 def is_real_location(source_manager: Any, location: Any) -> bool:
     """Return ``True`` if *location* maps into an actual source buffer.
 
     Synthesized symbols carry bogus, out-of-range buffer offsets (observed as
     huge integer values).  The reliable test is that the source manager can
-    resolve a non-empty file name and a positive line number.
+    resolve a non-empty file name and a positive line number.  A location in
+    linked text is not real either.
     """
     if location is None:
         return False
@@ -27,7 +31,9 @@ def is_real_location(source_manager: Any, location: Any) -> bool:
         line = source_manager.getLineNumber(location)
     except Exception:
         return False
-    return bool(file_name) and line > 0
+    # Text generated from a link database (``svdb-link:``) is compiled, never
+    # recorded: its declarations live in that database.
+    return bool(file_name) and line > 0 and not file_name.startswith(LINK_SCHEME)
 
 
 #: Ceiling on the expansion climb.  A macro that expands to itself is a

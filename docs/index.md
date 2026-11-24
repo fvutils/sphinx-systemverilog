@@ -26,6 +26,7 @@ usage/whole-tree
 usage/cross-referencing
 usage/advanced
 usage/database
+usage/linking
 usage/uvm-tree-export
 usage/external
 usage/svdb-api

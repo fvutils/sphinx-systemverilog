@@ -61,14 +61,20 @@ def _build_index(app: Any) -> None:
         uvm_max_components=config.sv_uvm_max_components,
         external=config.sv_external,
         external_sources=config.sv_external_sources,
+        # The sources link against every listed database that does not opt out.
+        links=[d["path"] for d in config.sv_databases if d.get("link", True)],
     )
     from .frontend.build import Options, open_index
     from .svdb.issues import SvdbError
 
-    databases = [
-        d["path"] if os.path.isabs(d["path"]) else os.path.join(app.confdir, d["path"])
-        for d in config.sv_databases if d["role"] == "local"
-    ]
+    def resolve(path: str) -> str:
+        return path if os.path.isabs(path) else os.path.join(app.confdir, path)
+
+    databases = [resolve(d["path"]) for d in config.sv_databases if d["role"] == "local"]
+    # A linked database feeds the UVM stitcher whatever its role: the
+    # testbench's database no longer describes the classes it linked.
+    stitch = [resolve(d["path"]) for d in config.sv_databases
+              if d["role"] == "external" and d.get("link", True)]
     # ``role: external`` databases are not documented here: they only give
     # link targets (linkout.py).
     from .linkout import open_external
@@ -78,7 +84,7 @@ def _build_index(app: Any) -> None:
     try:
         index = open_index(
             Options.make(**kwargs), cache_dir=cache_dir, databases=databases,
-            default_doc_style=config.sv_doc_style,
+            stitch_databases=stitch, default_doc_style=config.sv_doc_style,
         )
     except SvdbError as e:
         from sphinx.errors import ConfigError

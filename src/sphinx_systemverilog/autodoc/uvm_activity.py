@@ -24,7 +24,9 @@ legend:
 * a solid bar is a fork or a join, and the join bar carries the join semantics
   read from ``StatementBlockKind`` rather than guessed;
 * a dashed cluster is a loop, labelled with its controlling expression as
-  written.
+  written;
+* a dotted cluster is a task of the class the walked task calls (a helper, or
+  ``super.run_phase()``), holding that task's own steps.
 """
 
 from __future__ import annotations
@@ -35,12 +37,15 @@ from typing import Iterable
 from ..model.uvm import (
     ACT_ACTION,
     ACT_BRANCH,
+    ACT_CALL,
     ACT_DECISION,
     ACT_DELAY,
     ACT_FORK,
     ACT_ITEM,
     ACT_LOOP,
+    ACT_OBJECTION,
     ACT_SEQUENCE,
+    ACT_WAIT,
     JOIN_ALL,
     JOIN_ANY,
     JOIN_NONE,
@@ -62,6 +67,16 @@ _STYLES = {
                   'color="#2563eb"',
     ACT_DELAY: 'shape=box, style="rounded,filled", fillcolor="#ede9fe", '
                'color="#7c3aed"',
+    # Dashed, because an event wait --- unlike a delay --- ends only if
+    # something else happens, and the diagram cannot say whether it does.
+    ACT_WAIT: 'shape=box, style="rounded,filled,dashed", fillcolor="#ffedd5", '
+              'color="#c2410c"',
+    # UML's send-signal shape: an objection is a message to the phase.
+    ACT_OBJECTION: 'shape=cds, style="filled", fillcolor="#dcfce7", '
+                   'color="#15803d"',
+    # A call not followed, or that does nothing worth drawing.
+    ACT_CALL: 'shape=box, style="rounded,filled,dotted", fillcolor="#f8fafc", '
+              'color="#475569"',
 }
 
 _DECISION = 'shape=diamond, style=filled, fillcolor="#fef9c3", color="#a16207"'
@@ -208,6 +223,10 @@ class _Builder:
             return self.loop(activity, level)
         if kind == ACT_SEQUENCE:
             return self.subsequence(activity, level)
+        if kind == ACT_CALL and activity.children:
+            span = self.call(activity, level)
+            if span is not None:
+                return span
 
         label = activity.label or kind
         if kind == ACT_ITEM:
@@ -296,6 +315,22 @@ class _Builder:
             'constraint=false, style=dashed, color="#6b7280"',
         )
         return entry, exit_node
+
+    def call(self, activity: UvmActivity, level: int) -> tuple[str, str] | None:
+        r"""A helper task's steps, in a cluster named after the call.
+
+        Not a sub-sequence level: the task runs in the same sequence or phase,
+        so ``:depth:`` does not count it.
+        """
+        self.clusters += 1
+        self.canvas.open_cluster(
+            self.clusters, activity.label,
+            'style="dotted,rounded"; color="#475569"; fontsize=10; '
+            'fontcolor="#334155";',
+        )
+        span = self.chain(activity.children, level)
+        self.canvas.close_cluster()
+        return span
 
     def subsequence(self, activity: UvmActivity, level: int) -> tuple[str, str]:
         label = activity.type_name or activity.label

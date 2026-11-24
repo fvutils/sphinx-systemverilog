@@ -168,13 +168,16 @@ def validate_config(app: "Sphinx", config) -> None:
     for entry in getattr(config, "sv_databases", None) or []:
         path = entry.get("path") if isinstance(entry, dict) else entry
         role = entry.get("role", "local") if isinstance(entry, dict) else "local"
-        if not isinstance(path, str) or role not in ("local", "external"):
+        # Linking makes a database external to the compile; ``role`` only
+        # decides where its pages are (linking plan §1.7).
+        link = entry.get("link", True) if isinstance(entry, dict) else True
+        if not isinstance(path, str) or role not in ("local", "external") or not isinstance(link, bool):
             logger.warning(
-                "sv_databases entry %r is not a path or {path, role}; ignored",
+                "sv_databases entry %r is not a path or {path, role, link}; ignored",
                 entry, type="systemverilog",
             )
             continue
-        databases.append({"path": path, "role": role})
+        databases.append({"path": path, "role": role, "link": link})
     config.sv_databases = databases
     docs = getattr(config, "sv_external_docs", None) or {}
     if not isinstance(docs, dict) or not all(

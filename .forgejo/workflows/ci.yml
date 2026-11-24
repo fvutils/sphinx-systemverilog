@@ -79,6 +79,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch elkjs
+        # Git-ignored and not on PyPI; ivpm fetches it for developers, this
+        # job doesn't run ivpm. Pinned and hash-checked by the script. Needed
+        # before the install below as well as the build: the tests run against
+        # the installed package.
+        run: python3 scripts/fetch_elkjs.py
+
       - name: Set up a build environment
         run: |
           python3 -m venv /tmp/venv
@@ -106,6 +113,9 @@ jobs:
           /tmp/venv/bin/python -m build .
           /tmp/venv/bin/twine check dist/*
           ls -la dist/
+          # A wheel without elkjs would silently draw every block diagram
+          # with the Graphviz fallback.
+          /tmp/venv/bin/python -m zipfile -l dist/*.whl | grep -q 'sphinx_systemverilog/diagram/js/elk.bundled.js'
 
       - name: Upload distributions
         uses: forgejo/upload-artifact@v4

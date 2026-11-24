@@ -85,8 +85,10 @@ class DbIndex:
     """A name-resolved view of every object in one or more databases."""
 
     def __init__(self, paths: Iterable[str], *, options: Any = None, snapshot_path: str | None = None,
-                 live: Any = None, default_doc_style: str | None = None):
+                 live: Any = None, default_doc_style: str | None = None, stitch_databases: Iterable[str] = ()):
         self._paths = [os.fspath(p) for p in paths]
+        #: Read only by the UVM stitcher, after :attr:`_paths` (linking plan §1.7).
+        self._stitch_paths = [os.fspath(p) for p in stitch_databases]
         self._options = options
         self._snapshot_path = snapshot_path
         self._default_doc_style = default_doc_style
@@ -97,7 +99,8 @@ class DbIndex:
 
     @classmethod
     def in_memory(cls, conn: sqlite3.Connection, options: Any, snapshot: Any, databases: Iterable[str] = (),
-                  *, live: Any = None, default_doc_style: str | None = None) -> "DbIndex":
+                  *, live: Any = None, default_doc_style: str | None = None,
+                  stitch_databases: Iterable[str] = ()) -> "DbIndex":
         """An index whose own database lives in *conn* rather than a file.
 
         Pickled, it keeps only the options; unpickled in another process, it
@@ -105,6 +108,7 @@ class DbIndex:
         """
         self = cls.__new__(cls)
         self._paths = [":memory:", *[os.fspath(p) for p in databases]]
+        self._stitch_paths = [os.fspath(p) for p in stitch_databases]
         self._options = options
         self._snapshot_path = None
         self._default_doc_style = default_doc_style
@@ -144,10 +148,11 @@ class DbIndex:
         self._uvm_view = None
         self._uvm_views_ = None
         self._uvm_loaded = False
+        self._stitch_db = None
 
     def __getstate__(self) -> dict:
-        keep = ("_paths", "_options", "_snapshot_path", "_default_doc_style", "_len", "diagnostics",
-                "suppressed_count")
+        keep = ("_paths", "_stitch_paths", "_options", "_snapshot_path", "_default_doc_style", "_len",
+                "diagnostics", "suppressed_count")
         return {k: self.__dict__[k] for k in keep}
 
     def __setstate__(self, state: dict) -> None:
@@ -174,6 +179,19 @@ class DbIndex:
         self._objs.clear()
         self._roots = None
         return db
+
+    def _stitch_database(self):
+        """:meth:`_database` plus the stitch-only databases, for ``uvm_tree``."""
+        from ..svdb.database import Database
+
+        db = self._database()
+        extra = getattr(self, "_stitch_paths", None)
+        if not extra:
+            return db
+        if self._stitch_db is None or self._stitch_db[0] is not db:
+            others = Database.open(extra)
+            self._stitch_db = (db, Database(db._sources + others._sources))
+        return self._stitch_db[1]
 
     def _memory_conn(self) -> sqlite3.Connection:
         if self._mem_conn is not None and self._pid in (None, os.getpid()):
@@ -394,7 +412,7 @@ class _UvmView:
         the live provider when the database holds none."""
         views = self._views()
         if views is not None and views.classes is not None:
-            return self._index._database().uvm_tree(root or None)
+            return self._index._stitch_database().uvm_tree(root or None)
         return self._live().uvm_tree(root)
 
     def knows(self, name: str) -> bool:
@@ -408,10 +426,106 @@ class _UvmView:
     def sequence(self, name: str):
         """A non-library class's sequence from the database (``None`` when it
         is not a sequence); a library class's from the live provider."""
+        from .uvm import SEQUENCE_BODY
+
+        return self.activity(name, SEQUENCE_BODY)
+
+    def catalog(self, name: str, method: str = ""):
+        """The sub-sequence catalog of a behavioural task (see
+        :meth:`~.uvm.UvmProvider.catalog`), from the stored tasks."""
+        from .uvm_catalog import build_catalog
+        from .uvm_catalog import overrides_of as _overrides_of
+
+        root = self.activity(name, method)
+        if root is None:
+            return None
+        return build_catalog(root, self.sequence, self.origin, overrides=_overrides_of(self))
+
+    def tree(self, name: str, method: str = ""):
+        """The nested sequence tree of one behavioural task, as a
+        :class:`~.uvm_catalog.SequenceTree`; ``None`` when there is no such
+        task."""
+        from .uvm import SEQUENCE_BODY
+        from .uvm_catalog import build_tree, resolve_sequencers
+        from .uvm_catalog import overrides_of as _overrides_of
+
+        root = self.activity(name, method)
+        if root is None:
+            return None
+        tree = build_tree(root, self.sequence, self.origin, overrides=_overrides_of(self))
+        if root.method == SEQUENCE_BODY:
+            return tree
+        try:
+            components = self.uvm_tree(name)
+        except Exception:  # noqa: BLE001 - a tree without sequencer paths is still a tree
+            return tree
+        return resolve_sequencers(tree, components)
+
+    def origin(self, name: str) -> str:
+        """The label of the first database, after the main one, that declares
+        class *name*; ``""`` when the main one does, or none does.  Stitch-only
+        (``role: external``) databases count: a VIP documented elsewhere is
+        still where its sequences come from."""
+        from ..svdb.declgen import origin_of
+
+        bare = (name or "").split("::")[-1]
+        db = self._index._stitch_database()
+        for i in range(len(db.paths)):
+            if db.sql("SELECT 1 FROM object WHERE name = ? AND kind = 'class' LIMIT 1", (bare,), source=i):
+                return "" if i == 0 else origin_of(db, i)
+        return ""
+
+    def tasks(self):
+        """Every stored behavioural task: the main database's, then each linked
+        one's (see :meth:`~.uvm.UvmProvider.tasks`)."""
+        views = self._views()
+        if views is None or "uvm.sequences" not in views.sections():
+            return self._live().tasks()
+        out = list(views.sequences)
+        known = {q.name.split("::")[-1] for q in out}
+        for v in self._linked_views():
+            out.extend(q for q in v.sequences if q.name.split("::")[-1] not in known)
+        return out
+
+    def users(self, name: str):
+        """Everything that depends on sequence *name* (see
+        :meth:`~.uvm.UvmProvider.users`)."""
+        from .uvm_catalog import users_of
+
+        return users_of(self, name)
+
+    def _linked_views(self) -> list:
+        """The stored UVM views of every database after the main one, stitch
+        ones included; those without a ``uvm.sequences`` section are left out."""
+        if getattr(self, "_linked_views_", None) is None:
+            from ..frontend import uvm
+
+            db = self._index._stitch_database()
+            out = []
+            for i in range(1, len(db.paths)):
+                try:
+                    views = uvm.read(db, i)
+                except Exception:  # noqa: BLE001
+                    continue
+                if "uvm.sequences" in views.sections():
+                    out.append(views)
+            self._linked_views_ = out
+        return self._linked_views_
+
+    def activity(self, name: str, method: str = ""):
+        """A non-library class's behavioural task from the database --- the
+        main one, then each linked one --- and a library class's from the live
+        provider.  See :func:`~..frontend.uvm.task_from`.
+        """
+        from ..frontend.uvm import task_from
         from .uvm import _LIBRARY_PREFIX
 
         key = (name or "").strip().split("::")[-1]
         views = self._views()
         if views is not None and "uvm.sequences" in views.sections() and not key.startswith(_LIBRARY_PREFIX):
-            return next((q for q in views.sequences if q.name.split("::")[-1] == key), None)
-        return self._live().sequence(name)
+            for v in (views, *self._linked_views()):
+                known, task = task_from(v, key, method)
+                if known:
+                    return task
+            return None
+        return self._live().activity(name, method)

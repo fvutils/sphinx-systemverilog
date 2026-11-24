@@ -627,6 +627,14 @@ class Writer:
                 self._issue("error", "DanglingElab", f"elaboration names {what} {name!r}, which is not in this database")
         for d, k in c.execute("SELECT elab_def, elab_key FROM top WHERE elab_id IS NULL").fetchall():
             self._issue("error", "DanglingElab", f"top {d}@{k} names no elab record")
+        # A linked unit is described by the database it was linked from, never
+        # also here (linking plan §1.6).
+        for lk in (self._header or {}).get("links") or ():
+            for u in lk.get("units") or ():
+                if c.execute("SELECT 1 FROM object WHERE qname = ? AND parent_id IS NULL"
+                             " AND ns IN ('package', 'design')", (u,)).fetchone():
+                    self._issue("error", "LinkedUnitDefined",
+                                f"{u!r} is linked from {lk.get('origin')!r} and also defined in this file")
 
     def _resolve_bodies(self) -> None:
         c = self.conn

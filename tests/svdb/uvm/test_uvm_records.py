@@ -19,7 +19,8 @@ from sphinx_systemverilog.svdb.validate import validate
 from tests.conftest import UVM_STUB, UVM_TB
 
 HERE = Path(__file__).parent
-CASES = ["basic_tb", "tlm_tb", "config_tb", "override_tb", "bridge_tb", "seq_tb", "stitch_tb"]
+CASES = ["basic_tb", "tlm_tb", "config_tb", "override_tb", "bridge_tb", "seq_tb", "stitch_tb", "seq_dep_tb",
+         "seq_call_tb"]
 
 
 def _records(tb: str) -> list[dict]:
@@ -134,7 +135,50 @@ def test_db_index_answers_without_sources(tmp_path):
     assert provider.bridge() == live.bridge
     assert live.sequences
     for q in live.sequences:
-        assert provider.sequence(q.name) == q
+        assert provider.activity(q.name, q.method) == q
+        assert provider.activity(q.name) == q
         assert provider.knows(q.name)
+    # A component's task phase is stored beside the sequences, not as one.
+    assert provider.sequence("seq_test") is None
+    assert provider.activity("seq_test").method == "run_phase"
     assert not provider.knows("no_such_class")
     assert provider.sequence("no_such_class") is None
+
+
+def test_db_index_answers_an_inherited_task_phase(tmp_path):
+    """Only task phases user code writes are stored; any other task phase of a
+    component is still answered, as empty, without parsing the sources."""
+    from sphinx_systemverilog.model.db import DbIndex
+
+    options = Options.make(source_dirs=[str(UVM_STUB)], include_dirs=[str(UVM_STUB)],
+                           build_units=[str(UVM_STUB / "mini_uvm.sv"), str(UVM_TB / "seq_tb.sv")])
+    path = str(tmp_path / "tb.svdb")
+    write(parse(options), options, path).conn.close()
+    provider = DbIndex([path]).uvm_provider
+    env = provider.activity("seq_env")
+    assert env.method == "run_phase" and not env.overridden and env.empty
+    assert provider.activity("seq_test", "main_phase").method == "main_phase"
+    assert provider.activity("seq_test", "build_phase") is None
+    assert provider.activity("seq_item", "run_phase") is None
+
+
+@pytest.mark.parametrize("tb", ["seq_tb", "seq_dep_tb", "seq_call_tb"])
+def test_db_index_catalogs_and_users_equal_live(tmp_path, tb):
+    """Catalogs and users from the stored tasks equal the live provider's ---
+    member handles, factory overrides and all."""
+    from sphinx_systemverilog.model.db import DbIndex
+
+    options = Options.make(source_dirs=[str(UVM_STUB)], include_dirs=[str(UVM_STUB)],
+                           build_units=[str(UVM_STUB / "mini_uvm.sv"), str(UVM_TB / f"{tb}.sv")])
+    index = parse(options)
+    live = index.uvm_provider
+    path = str(tmp_path / "tb.svdb")
+    write(index, options, path).conn.close()
+    stored = DbIndex([path]).uvm_provider
+    tasks = live.tasks()
+    assert sorted((q.name, q.method) for q in stored.tasks()) == sorted((q.name, q.method) for q in tasks)
+    for q in tasks:
+        assert stored.catalog(q.name, q.method) == live.catalog(q.name, q.method)
+        assert stored.tree(q.name, q.method) == live.tree(q.name, q.method)
+        if q.method == "body":
+            assert stored.users(q.name) == live.users(q.name)

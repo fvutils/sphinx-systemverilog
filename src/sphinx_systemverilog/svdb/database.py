@@ -157,6 +157,24 @@ class Object:
 
 
 @dataclass(frozen=True)
+class LinkStatus:
+    """One ``links`` entry of an open file's header, checked against the
+    files open with it (linking plan §1.6)."""
+
+    #: The file whose header names the link.
+    database: str
+    origin: str
+    #: Where the linked database was when *database* was written.
+    path: str | None
+    units: tuple[str, ...]
+    #: ``ok``: open, same content; ``changed``: open, different content
+    #: (relinking is due); ``missing``: no open file has that origin.
+    state: str
+    #: The open file of that origin, if any.
+    open_path: str | None = None
+
+
+@dataclass(frozen=True)
 class Unresolved:
     """A reference whose target is not in any open database."""
 
@@ -230,6 +248,40 @@ def _connect_ro(path: str) -> sqlite3.Connection:
     return sqlite3.connect(p.absolute().as_uri() + "?mode=ro", uri=True, check_same_thread=False)
 
 
+def file_hash(path: str) -> str | None:
+    """SHA-256 of a file's bytes (``links[].hash``), or None if unreadable."""
+    import hashlib
+
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def _origin(s: "_Source") -> str:
+    """A file's label: its header ``origin``, else its file name without suffix."""
+    return (s.header or {}).get("origin") or os.path.splitext(os.path.basename(s.path))[0]
+
+
+def _unopened_links(sources: list["_Source"]) -> list[str]:
+    """Paths of the databases *sources*' headers link to that none of them is."""
+    have = {_origin(s) for s in sources} | {os.path.abspath(s.path) for s in sources}
+    out: list[str] = []
+    for s in sources:
+        for lk in (s.header or {}).get("links") or ():
+            if lk.get("origin") in have:
+                continue
+            recorded = lk.get("path") or ""
+            for p in (recorded, os.path.join(os.path.dirname(os.path.abspath(s.path)), os.path.basename(recorded))):
+                if p and os.path.isfile(p) and os.path.abspath(p) not in have:
+                    out.append(p)
+                    have.add(os.path.abspath(p))
+                    have.add(lk.get("origin"))
+                    break
+    return out
+
+
 def _check(path: str, conn: sqlite3.Connection) -> dict:
     try:
         meta = dict(conn.execute("SELECT key, value FROM meta"))
@@ -250,18 +302,31 @@ class Database:
         self._sources = sources
         #: Keys found in more than one file, with the files, in order.
         self.duplicates: dict[str, list[str]] = {}
+        self._links: list[LinkStatus] | None = None
+        for st in self.links():
+            if st.state == "changed":
+                log.warning("svdb: %s was linked against a different %s (%s); rebuild it to relink",
+                            st.database, st.origin, st.open_path)
 
     @classmethod
-    def open(cls, paths: str | os.PathLike | Iterable[str | os.PathLike]) -> "Database":
-        """Open the database file(s) *paths*, read-only; earlier files take precedence."""
+    def open(cls, paths: str | os.PathLike | Iterable[str | os.PathLike], *,
+             follow_links: bool = False) -> "Database":
+        """Open the database file(s) *paths*, read-only; earlier files take precedence.
+
+        *follow_links* also opens, after them, each database a header ``links``
+        to that no open file stands for: at its recorded path, else beside the
+        file that names it."""
         if isinstance(paths, (str, os.PathLike)):
             paths = [paths]
         sources = []
         try:
-            for p in paths:
-                p = os.fspath(p)
+            todo = [os.fspath(p) for p in paths]
+            while todo:
+                p = todo.pop(0)
                 conn = _connect_ro(p)
                 sources.append(_Source(p, conn, _check(p, conn)))
+                if follow_links and not todo:
+                    todo = _unopened_links(sources)
         except BaseException:
             for s in sources:
                 s.conn.close()
@@ -292,6 +357,28 @@ class Database:
     def headers(self) -> list[dict]:
         """The header record of each file, in order."""
         return [s.header for s in self._sources]
+
+    def links(self) -> list[LinkStatus]:
+        """Every open file's ``links``, each checked against the open files
+        (by origin, then by content hash)."""
+        if self._links is None:
+            by_origin: dict[str, str] = {}
+            for s in self._sources:
+                by_origin.setdefault(_origin(s), s.path)
+            out = []
+            for s in self._sources:
+                for lk in (s.header or {}).get("links") or ():
+                    there = by_origin.get(lk.get("origin", ""))
+                    if there is None:
+                        state = "missing"
+                    elif lk.get("hash") and lk["hash"] != file_hash(there):
+                        state = "changed"
+                    else:
+                        state = "ok"
+                    out.append(LinkStatus(s.path, lk.get("origin", ""), lk.get("path"),
+                                          tuple(lk.get("units") or ()), state, there))
+            self._links = out
+        return self._links
 
     # -- plumbing ----------------------------------------------------------------
 
@@ -542,9 +629,22 @@ class Database:
         records, following factory overrides as IEEE 1800.2's factory does
         (:mod:`.uvm_tree`).  Raises :class:`LookupError` when there is no root.
         """
-        from .uvm_tree import stitch
+        from .uvm_tree import UvmTreeIssue, stitch
 
-        return stitch(self, root, name=name, include_conditional=include_conditional, max_nodes=max_nodes)
+        tree = stitch(self, root, name=name, include_conditional=include_conditional, max_nodes=max_nodes)
+        missing = [lk for lk in self.links() if lk.state == "missing"]
+        if missing:
+            # Name the database a missing type was linked from (§1.6).
+            where = {u: lk for lk in missing for u in lk.units}
+            issues = []
+            for i in tree.issues:
+                lk = where.get(i.message.split(" ", 1)[0].split("::", 1)[0]) if i.code == "unknown_type" else None
+                if lk is not None:
+                    i = UvmTreeIssue(i.code, f"{i.message}; it was linked from {lk.origin}"
+                                     f" ({lk.path or 'path unknown'}), which is not open", i.path, i.loc)
+                issues.append(i)
+            tree.issues = issues
+        return tree
 
     def tree(self, top: Object, *, depth: int | None = None, cap: int = 5000) -> "TreeNode":
         """The elaborated instance tree rooted at *top* (plan §5.3, D3c-IMPL-2).

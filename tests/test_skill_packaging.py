@@ -70,6 +70,17 @@ def test_entrypoint_declared():
     assert group[ENTRY_POINT_NAME] == "sphinx_systemverilog.skills:get_skill_dirs"
 
 
+def test_package_data_covers_elkjs():
+    """elkjs is git-ignored, so only package-data puts it in the wheel and sdist.
+
+    The CI build jobs also check the built wheel itself; this catches a
+    pattern dropped from pyproject.toml before anything is built.
+    """
+    patterns = _pyproject()["tool"]["setuptools"]["package-data"]["sphinx_systemverilog"]
+    for f in ("elk.bundled.js", "LICENSE.md", "VERSION"):
+        assert f"diagram/js/{f}" in patterns
+
+
 def test_package_data_covers_the_skill():
     """The package-data patterns reach every file the skill ships.
 

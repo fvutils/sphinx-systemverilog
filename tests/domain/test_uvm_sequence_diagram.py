@@ -290,3 +290,202 @@ def test_optional_silences_the_missing_case(app, warning):
     app.build()
 
     assert "cannot find a UVM sequence" not in warning.getvalue()
+
+
+# -- sv:uvm-activity: component task phases ---------------------------------------
+
+
+def test_waits_and_objections_have_their_own_shapes(provider):
+    dot, _ = build_activity_dot(provider.activity("seq_test"))
+    assert re.search(r'shape=cds[^\n]*label="raise objection"', dot)
+    assert re.search(r'dashed[^\n]*label="@\(settled\)"', dot)
+    assert "main_seq" in dot
+
+
+activity_config = pytest.mark.sphinx(
+    "html", testroot="uvm-activity", srcdir="uvm-activity", confoverrides=CONF
+)
+
+
+@pytest.mark.sphinx
+@activity_config
+def test_the_activity_directive_draws_a_run_phase(app):
+    app.build()
+    codes = _graphviz_code(app.env.get_doctree("index"))
+    assert len(codes) == 2, "seq_test's run_phase and main_seq's body; the rest say why not"
+    assert "raise objection" in codes[0]
+    assert "do_cfg" in codes[1]
+
+    page = (app.outdir / "index.html").read_text()
+    assert "Control flow as written in run_phase()" in page
+    # The database knows seq_env is a component, not which library class its
+    # empty run_phase comes from; that half of the sentence is live-only.
+    assert "seq_env does not define run_phase()" in page
+    assert "seq_test does not define main_phase()." in page
+
+
+@pytest.mark.sphinx
+@pytest.mark.sphinx(
+    "html", testroot="uvm-activity-missing", srcdir="uvm-activity-missing",
+    confoverrides=CONF,
+)
+def test_a_function_phase_warns(app, warning):
+    app.build()
+    text = warning.getvalue()
+    assert "cannot find build_phase() on a UVM class named 'seq_test'" in text
+
+
+# -- sv:uvm-sequence-catalog ------------------------------------------------------
+
+catalog_config = pytest.mark.sphinx(
+    "html", testroot="uvm-catalog", srcdir="uvm-catalog", confoverrides=CONF
+)
+
+
+def _catalog_tables(doctree):
+    from docutils import nodes
+
+    return [t for t in doctree.findall(nodes.table) if "sv-uvm-catalog" in t["classes"]]
+
+
+@pytest.mark.sphinx
+@catalog_config
+def test_the_catalog_lists_every_sequence_once(app):
+    app.build()
+    tables = _catalog_tables(app.env.get_doctree("index"))
+    assert len(tables) == 3, "seq_test, rec_seq, and the :catalog: under the diagram"
+    first = tables[0].astext()
+    for name in ("main_seq", "cfg_seq", "traf_seq", "env.seqr", "m_sequencer", "seq_item"):
+        assert name in first
+
+    page = (app.outdir / "index.html").read_text()
+    assert "run_phase() depends on 3 sequence(s): 1 started directly " \
+           "and 2 through other sequences." in page
+
+
+@pytest.mark.sphinx
+@catalog_config
+def test_the_catalog_marks_recursion_and_declared_types(app):
+    app.build()
+    second = _catalog_tables(app.env.get_doctree("index"))[1].astext()
+    assert "(recursive)" in second
+    assert "declared type only" in second
+    page = (app.outdir / "index.html").read_text()
+    assert "starts no sub-sequences" in page
+    assert "drives transactions itself" in page
+    assert "seq_env does not define run_phase(), so it depends on no sequences." in page
+
+
+# -- phase 3: member handles, factory overrides, sequence users --------------------
+
+deps_config = pytest.mark.sphinx(
+    "html", testroot="uvm-sequence-deps", srcdir="uvm-sequence-deps",
+    confoverrides={**CONF, "sv_build_units": [str(UVM_STUB / "mini_uvm.sv"),
+                                              str(UVM_TB / "seq_dep_tb.sv")]},
+)
+
+
+def _text(app) -> str:
+    import re
+
+    page = (app.outdir / "index.html").read_text()
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", page)).replace("&gt;", ">")
+
+
+@pytest.mark.sphinx
+@deps_config
+def test_the_catalog_resolves_members_and_applies_overrides(app):
+    app.build()
+    assert app._warning.getvalue().strip() == ""
+    tables = _catalog_tables(app.env.get_doctree("index"))
+    first = tables[0].astext()
+    assert "created in build_phase()" in first
+    assert "created, overridden from base_seq" in first
+    # fast_seq is what runs, so what it starts is a dependency.
+    assert "burst_seq" in first
+    text = _text(app)
+    assert "base_seq → fast_seq (in dep_test.build_phase)" in text
+    assert "cool_seq → cold_seq (conditional, in dep_test.build_phase)" in text
+    assert "warm_seq → cool_seq (in other_test.build_phase)" in text
+    # The subclass registers the warm_seq override itself: applied there.
+    second = tables[1].astext()
+    assert "created in build_phase(), overridden from warm_seq" in second
+
+
+@pytest.mark.sphinx
+@deps_config
+def test_the_users_table_lists_every_task_that_depends(app):
+    app.build()
+    from docutils import nodes
+
+    doctree = app.env.get_doctree("index")
+    users = [t for t in doctree.findall(nodes.table) if "sv-uvm-sequence-users" in t["classes"]]
+    assert len(users) == 2, "burst_seq, and the :used-by: under fast_seq"
+    assert "fast_seq.body()" in users[0].astext()
+    text = _text(app)
+    assert "burst_seq is started in 1 place(s). 2 component task(s) and 1 sequence(s) depend on it." in text
+    assert "dep_test.run_phase() (through 1 other sequence level(s))" in text
+    assert "Nothing in this design starts cold_seq" in text
+    assert "cold_seq can also run in place of another sequence, through a factory " \
+           "override: cool_seq → cold_seq (conditional, in dep_test.build_phase)." in text
+    assert "fast_seq is started in 2 place(s)." in text
+
+
+calls_config = pytest.mark.sphinx(
+    "html", testroot="uvm-sequence-calls", srcdir="uvm-sequence-calls",
+    confoverrides={**CONF, "sv_build_units": [str(UVM_STUB / "mini_uvm.sv"),
+                                              str(UVM_TB / "seq_call_tb.sv")]},
+)
+
+
+@pytest.mark.sphinx
+@calls_config
+def test_helper_tasks_are_drawn_in_place_and_catalogued(app):
+    app.build()
+    assert app._warning.getvalue().strip() == ""
+    doctree = app.env.get_doctree("index")
+    test_dot, seq_dot = _graphviz_code(doctree)
+    assert 'label="super.run_phase()"' in test_dot
+    assert 'label="traffic()"' in test_dot
+    assert 'label="do_steps()"' in seq_dot
+    first = _catalog_tables(doctree)[0].astext()
+    assert "super.run_phase() → traffic()" in first
+    text = _text(app)
+    assert "Tasks of the class that it calls (super.run_phase(), traffic(), drain())" in text
+    assert "Drawn as a single box" in text and ": drain()." in text
+
+
+@pytest.mark.sphinx
+@calls_config
+def test_the_tree_directive_renders_nested_starts(app):
+    app.build()
+    from docutils import nodes
+
+    doctree = app.env.get_doctree("index")
+    lists = [b for b in doctree.findall(nodes.bullet_list) if "sv-uvm-sequence-tree" in b["classes"]]
+    outer = lists[0]
+    assert len(outer.children) == 2, "call_seq and tail_seq"
+    text = _text(app)
+    assert "call_test.run_phase() starts sequences in 4 place(s)" in text
+    assert "in repeat (2); through do_steps()" in text
+    assert "(shown above)" in text
+
+
+@pytest.mark.sphinx
+@deps_config
+def test_the_tree_option_names_the_override(app):
+    app.build()
+    assert app._warning.getvalue().strip() == ""
+    text = _text(app)
+    assert "created, overridden from base_seq" in text
+    assert "dep_test.run_phase() starts sequences in 5 place(s)" in text
+
+
+@pytest.mark.sphinx
+@calls_config
+def test_the_tree_names_sequencer_instances(app):
+    app.build()
+    text = _text(app)
+    assert "on env.vseqr = uvm_test_top.env.vseqr (call_vsequencer)" in text
+    assert "on p_sequencer.agt_sqr = uvm_test_top.env.agt.sqr (call_sequencer)" in text
+    assert "Sequencer instances are found in the component tree built from vseq_test" in text

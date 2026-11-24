@@ -13,7 +13,7 @@ from functools import lru_cache
 from importlib import resources
 
 #: MAJOR.MINOR of the interchange schema this package reads and writes.
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 def schema_text() -> str:
