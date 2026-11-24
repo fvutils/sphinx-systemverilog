@@ -3,12 +3,17 @@
 Four kinds of diagram are available: **inheritance diagrams** for class
 hierarchies, **instance diagrams** for the structural composition of an RTL
 design, **UVM schematics** for how a testbench's components are wired together,
-and **UVM activity diagrams** for what a sequence does. All render with
+and **UVM activity diagrams** for what a sequence does. UVM schematics in HTML
+are laid out with [ELK](https://eclipse.dev/elk/) and drawn as inline SVG; the
+rest render with
 [`sphinx.ext.graphviz`](https://www.sphinx-doc.org/en/master/usage/extensions/graphviz.html).
 
 ## Prerequisite
 
-Graphviz's `dot` executable must be installed and on `PATH`:
+ELK needs nothing extra: elkjs ships inside the package and runs in an embedded
+JavaScript engine (`mini-racer`, installed as a dependency). Graphviz's `dot`
+executable is needed for the other diagrams, and for schematics in non-HTML
+output (LaTeX/PDF, text). It must be installed and on `PATH`:
 
 ```bash
 # Debian/Ubuntu
@@ -96,11 +101,32 @@ makes.
 .. sv:uvm-schematic:: my_env
 ```
 
-Agents are drawn as clusters holding their own components; everything else is a
-box with its ports on it. See [`sv:uvm-schematic`](uvm-schematic) for the
-options and [the tier taxonomy](uvm-tiers).
+Agents are drawn as boxes holding their own components; everything else is a
+box with its ports on it. Data flows left to right: a port that sends sits on a
+box's right side, an export or imp that receives on its left, and a driver's
+`seq_item_port` faces the sequencer it pulls from. See
+[`sv:uvm-schematic`](uvm-schematic) for the options.
 
-### Why this diagram is laid out the way it is
+(uvm-schematic-layout)=
+### Layout: ELK, with Graphviz as the fallback
+
+In HTML the schematic is laid out by ELK's layered algorithm and written into
+the page as SVG, so it follows the page's light or dark theme and its text can
+be searched. ELK places boxes by their connections, routes edges at right
+angles, and lets a connection end on an agent's own port or on the boundary of
+the component being drawn. Graphviz can't draw either of those, because a
+cluster has no ports.
+
+The Graphviz drawing described below is still made. It is what LaTeX, text and
+other non-HTML builders render, and what HTML falls back to when ELK can't run:
+set `sv_diagram_layout = "graphviz"` in `conf.py` to choose it, or it is used
+automatically, with a warning and a note under each diagram, when elkjs is
+missing (a source checkout where `ivpm update` hasn't been run).
+
+Layouts are cached in the build's doctree directory, keyed by the diagram's
+content, so an unchanged schematic is not laid out again.
+
+### Why the Graphviz layout is the way it is
 
 Worth a paragraph, because a naive graph of the same data produces a picture
 nobody recognizes. That is not hypothetical: a DVCon paper (O'Keeffe, Beattie &

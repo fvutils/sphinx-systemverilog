@@ -165,6 +165,7 @@ jobs:
           python -m build .
           python -m twine check dist/*
           python -m zipfile -l dist/*.whl | grep -q 'sphinx_systemverilog/diagram/js/elk.bundled.js'
+          python -m zipfile -l dist/*.whl | grep -q 'sphinx_systemverilog/diagram/static/render.js'
 
       - name: Check the tag matches the package version
         # Guards against tagging v0.2.0 while __version__.py still says 0.1.0,

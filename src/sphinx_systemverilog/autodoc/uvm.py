@@ -48,6 +48,7 @@ from .uvm_activity import build_activity_dot
 from .uvm_diagram import (
     TIERS,
     build_schematic,
+    build_schematic_diagram,
     build_schematic_dot,
     supports_newrank,
 )
@@ -807,18 +808,30 @@ class SvUvmSchematic(_UvmDirective):
                 )
             return []
 
-        schematic = build_schematic(
-            structure, root,
-            tiers=_parse_tiers(self, root),
-            order=_parse_order(self.options.get("order", "")),
-        )
-        newrank = supports_newrank(getattr(env.config, "graphviz_dot", "dot"))
+        from ..diagram.sphinx import draw_node
 
-        node = graphviz()
-        node["code"] = build_schematic_dot(schematic, newrank=newrank)
-        node["options"] = {"docname": env.docname}
-        node["alt"] = f"UVM schematic of {root}"
-        return [node] + self._notes(schematic, root, newrank)
+        tiers = _parse_tiers(self, root)
+        order = _parse_order(self.options.get("order", ""))
+        alt = f"UVM schematic of {root}"
+
+        # The Graphviz drawing: the fallback, and what non-HTML output uses.
+        schematic = build_schematic(structure, root, tiers=tiers, order=order)
+        newrank = supports_newrank(getattr(env.config, "graphviz_dot", "dot"))
+        fallback = graphviz()
+        fallback["code"] = build_schematic_dot(schematic, newrank=newrank)
+        fallback["options"] = {"docname": env.docname}
+        fallback["alt"] = alt
+
+        elk = build_schematic(structure, root, tiers=tiers, order=order, containers=True)
+        drawn, why_not = draw_node(env, build_schematic_diagram(elk, tiers), [fallback],
+                                   alt, (env.docname, self.lineno))
+        if drawn[0] is fallback:
+            notes = self._notes(schematic, root, newrank)
+            if why_not:
+                notes.insert(0, self._note(
+                    f"Drawn with Graphviz, because {why_not}."))
+            return drawn + notes
+        return drawn + self._notes(elk, root, True)
 
     def _notes(self, schematic, root: str, newrank: bool) -> list[nodes.Node]:
         out: list[nodes.Node] = []

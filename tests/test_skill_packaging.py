@@ -81,6 +81,19 @@ def test_package_data_covers_elkjs():
         assert f"diagram/js/{f}" in patterns
 
 
+def test_package_data_covers_the_diagram_renderer():
+    import fnmatch
+
+    patterns = _pyproject()["tool"]["setuptools"]["package-data"]["sphinx_systemverilog"]
+    pkg_root = os.path.dirname(os.path.abspath(skills.__file__))
+    static = os.path.join(pkg_root, "diagram", "static")
+    files = sorted(os.listdir(static))
+    assert {"render.js", "sv-diagram.css"} <= set(files)
+    for f in files:
+        rel = f"diagram/static/{f}"
+        assert any(fnmatch.fnmatchcase(rel, p) for p in patterns), f"{rel} would not ship"
+
+
 def test_package_data_covers_the_skill():
     """The package-data patterns reach every file the skill ships.
 

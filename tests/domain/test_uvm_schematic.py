@@ -19,6 +19,7 @@ import pytest
 
 from sphinx_systemverilog.autodoc.uvm_diagram import (
     build_schematic,
+    build_schematic_diagram,
     build_schematic_dot,
 )
 from tests.conftest import UVM_STUB, UVM_TB, uvm_stub_index
@@ -318,6 +319,89 @@ def test_the_graphviz_probe_reads_a_version(tmp_path):
     assert supports_newrank(str(fake)) is False
 
 
+# -- the ELK diagram ----------------------------------------------------------
+#
+# Asserted on the Diagram, the engine-neutral structure, for the same reason
+# the DOT tests above assert on DOT: what ELK then does with it is ELK's
+# business, and tests/diagram covers that the layout runs.
+
+
+@pytest.fixture
+def diagram(structure):
+    return build_schematic_diagram(build_schematic(structure, "tlm_env", containers=True))
+
+
+def _box(diagram, box_id):
+    return next(b for b in diagram.boxes() if b.id == box_id)
+
+
+def test_the_diagram_nests_each_agent_around_its_components(diagram):
+    top = [b.id for b in diagram.root.children]
+    assert top == ["agt_a", "agt_b", "sb", "cov", "vseqr"], "source order"
+    assert {c.label for c in _box(diagram, "agt_a").children} == {"seqr", "drv", "mon"}
+    assert _box(diagram, "agt_a").cls == "cont"
+    diagram.validate()
+
+
+def test_ports_face_the_way_data_flows(diagram):
+    """Ports send east, exports and imps receive west; seq_item is reversed."""
+    side = {p.id: p.side for b in diagram.boxes() for p in b.ports}
+    assert side["agt_a/mon:ap"] == "EAST"
+    assert side["sb:aimp"] == "WEST"
+    # the driver pulls, so items go from the sequencer's export to its port
+    assert side["agt_a/seqr:seq_item_export"] == "EAST"
+    assert side["agt_a/drv:seq_item_port"] == "WEST"
+
+
+def test_edges_follow_the_data_and_fan_out_as_one_hyperedge(diagram):
+    edges = {(e.source, e.kind): e for e in diagram.edges}
+    assert edges[("agt_a/mon:ap", "analysis")].targets == ["sb:aimp", "cov:aimp"]
+    seq = edges[("agt_a/seqr:seq_item_export", "seq_item")]
+    assert seq.targets == ["agt_a/drv:seq_item_port"] and seq.conditional
+    # a handle ends on the sequencer box, not a port
+    assert edges[("vseqr", "handle")].targets == ["agt_a/seqr", "agt_b/seqr"]
+
+
+def test_conditional_components_are_marked(diagram):
+    drv = _box(diagram, "agt_a/drv")
+    assert "cond" in drv.cls.split() and drv.sub.endswith("[conditional]")
+
+
+def test_order_and_tier_reach_the_diagram(structure):
+    tiers = {"sb": "top", "vseqr": "bottom"}
+    d = build_schematic_diagram(
+        build_schematic(structure, "tlm_env", tiers=tiers, order=["sb", "vseqr", "agt_b"],
+                        containers=True), tiers)
+    assert [b.id for b in d.root.children] == ["sb", "vseqr", "agt_b", "agt_a", "cov"]
+    assert d.model_order
+    assert _box(d, "sb").layer == "FIRST" and _box(d, "vseqr").layer == "LAST"
+    assert _box(d, "cov").layer == ""
+
+
+@pytest.fixture(scope="module")
+def fwd():
+    return uvm_stub_index("fwd_tb.sv").uvm_provider.get()
+
+
+def test_graphviz_drops_connections_at_container_ports(fwd):
+    """The problem ELK fixes: a cluster can't carry ports."""
+    assert len(build_schematic(fwd, "fwd_env").dropped) == 3
+
+
+def test_containers_mode_draws_connections_at_container_ports(fwd):
+    schematic = build_schematic(fwd, "fwd_env", containers=True)
+    assert schematic.dropped == []
+    d = build_schematic_diagram(schematic)
+    ends = {(e.source, t) for e in d.edges for t in e.targets}
+    assert ends == {
+        ("agt/mon:ap", "agt:ap"),            # forwarded inside the agent
+        ("agt:ap", "sb:act_imp"),            # leaving the agent's own port
+        ("@root:exp_export", "sb:exp_imp"),  # entering through the env's border
+    }
+    assert [p.side for p in d.root.ports] == ["WEST"]
+    d.validate()
+
+
 # -- through Sphinx -----------------------------------------------------------
 
 
@@ -350,11 +434,80 @@ def _graphviz_code(doctree) -> list[str]:
 @pytest.mark.sphinx
 @sphinx_config
 def test_the_directive_emits_graphviz_nodes(doctree):
+    """The Graphviz drawing stays, under the SVG, for non-HTML output."""
     codes = _graphviz_code(doctree)
 
     assert len(codes) == 3
     for code in codes:
         assert "newrank=true" in code
+
+
+@pytest.mark.sphinx
+@sphinx_config
+def test_html_gets_the_elk_diagram_inline(app):
+    from sphinx_systemverilog.diagram.sphinx import sv_diagram
+
+    app.build()
+    doctree = app.env.get_doctree("index")
+    drawn = list(doctree.findall(sv_diagram))
+    assert len(drawn) == 3
+    assert all(d["svg"].startswith("<svg") for d in drawn)
+
+    page = (app.outdir / "index.html").read_text()
+    assert page.count('<div class="sv-diagram"') == 3
+    assert 'class="graphviz' not in page, "no Graphviz image as well"
+    assert "sv-diagram.css" in page
+    assert (app.outdir / "_static" / "sv-diagram.css").is_file()
+    # each diagram's arrowheads have their own ids
+    assert len(set(re.findall(r'<marker id="(svd[0-9a-f]+)-ah-analysis"', page))) == 3
+
+
+@pytest.mark.sphinx
+@pytest.mark.sphinx(
+    "html", testroot="uvm-schematic", srcdir="uvm-schematic-graphviz",
+    confoverrides={**CONF, "sv_diagram_layout": "graphviz"},
+)
+def test_the_graphviz_layout_can_be_chosen(app):
+    from sphinx_systemverilog.diagram.sphinx import sv_diagram
+
+    app.build()
+    doctree = app.env.get_doctree("index")
+    assert not list(doctree.findall(sv_diagram))
+    assert len(_graphviz_code(doctree)) == 3
+
+
+@pytest.mark.sphinx
+@pytest.mark.sphinx(
+    "html", testroot="uvm-schematic", srcdir="uvm-schematic-no-elk",
+    confoverrides=CONF,
+)
+def test_without_elkjs_the_schematic_falls_back_to_graphviz(app, warning, monkeypatch):
+    from sphinx_systemverilog.diagram import engine, sphinx as diagram_sphinx
+
+    monkeypatch.setattr(engine, "elk_source", lambda: None)
+    # get_engine() re-creates the engine for this test; both are restored after
+    monkeypatch.setattr(engine, "_engine", None)
+    monkeypatch.setattr(engine, "_engine_pid", None)
+    monkeypatch.setattr(diagram_sphinx, "_warned_unavailable", False)
+    app.build()
+    page = (app.outdir / "index.html").read_text()
+
+    assert '<div class="sv-diagram"' not in page
+    assert "Drawn with Graphviz, because elkjs is missing" in page
+    assert "ivpm update" in warning.getvalue()
+
+
+@pytest.mark.sphinx
+@pytest.mark.sphinx(
+    "text", testroot="uvm-schematic", srcdir="uvm-schematic-text", confoverrides=CONF,
+)
+def test_other_builders_render_the_graphviz_child(app, warning):
+    """Only HTML takes the SVG; the rest render what they always have."""
+    app.build()
+    text = (app.outdir / "index.txt").read_text()
+
+    assert "<svg" not in text
+    assert text.count("[graph: UVM schematic of tlm_env]") == 3
 
 
 @pytest.mark.sphinx

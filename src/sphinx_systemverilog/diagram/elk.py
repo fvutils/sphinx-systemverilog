@@ -84,6 +84,8 @@ def _node(b: Box) -> dict:
         "elk.spacing.portsSurrounding": f"[top={_head(b)},left=0,bottom=6,right=0]",
     }
     n["layoutOptions"] = opts
+    if b.layer:
+        opts["elk.layered.layering.layerConstraint"] = b.layer
     if b.children:
         opts["elk.padding"] = "[top=36,left=16,bottom=14,right=16]"
         n["children"] = [_node(c) for c in b.children]

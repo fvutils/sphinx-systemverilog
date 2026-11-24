@@ -163,3 +163,40 @@ def test_missing_elkjs_names_the_fix(monkeypatch):
     monkeypatch.setattr(engine_mod, "elk_source", lambda: None)
     assert get_engine("mini-racer") is None
     assert "ivpm update" in engine_mod.unavailable_reason()
+
+
+def test_layer_hint_reaches_elk():
+    d = _env()
+    d.root.children[0].layer = "FIRST"
+    nodes = {n["id"]: n for n in _all(to_elk(d), "children")}
+    assert nodes["mon"]["layoutOptions"]["elk.layered.layering.layerConstraint"] == "FIRST"
+    d.root.children[0].layer = "LEFT"
+    with pytest.raises(ValueError, match="layer 'LEFT'"):
+        d.validate()
+
+
+# -------------------------------------------------------------------------- render
+
+def _svg(engine=None):
+    d = _env()
+    d.root.children[0].href = "mon.html"
+    d.root.children[1].cls = "leaf cond"
+    laid = layout(to_elk(d))
+    return (engine or get_engine()).render(laid, {"idPrefix": "p1", "label": "env <x>"})
+
+
+def test_render_draws_every_element():
+    svg = _svg()
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg" class="svd"')
+    assert 'aria-label="env &lt;x&gt;"' in svg
+    assert svg.count('class="box ') == 4
+    assert '<a href="mon.html">' in svg and 'class="box leaf cond"' in svg
+    # one arrowhead per kind with an arrow, ids prefixed per diagram
+    assert 'id="p1-ah-analysis"' in svg and 'marker-end="url(#p1-ah-analysis)"' in svg
+    assert "p1-ah-bundle" not in svg, "bundles have no arrowhead"
+    assert ">txn</text>" in svg and 'class="t-port"' in svg
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
+def test_node_renders_the_same_svg():
+    assert _svg(get_engine("node")) == _svg()

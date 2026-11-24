@@ -116,6 +116,7 @@ jobs:
           # A wheel without elkjs would silently draw every block diagram
           # with the Graphviz fallback.
           /tmp/venv/bin/python -m zipfile -l dist/*.whl | grep -q 'sphinx_systemverilog/diagram/js/elk.bundled.js'
+          /tmp/venv/bin/python -m zipfile -l dist/*.whl | grep -q 'sphinx_systemverilog/diagram/static/render.js'
 
       - name: Upload distributions
         uses: forgejo/upload-artifact@v4

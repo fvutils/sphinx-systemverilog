@@ -47,9 +47,10 @@ Checklist, in order:
 3. **Do not put `show-*` options in `sv_default_options`** unless you mean to
    pay for hierarchy elaboration on every module page.
 4. **Install Graphviz** (`dot` on `PATH`) only if you want diagrams. Without
-   it, builds still pass; diagrams are skipped with a warning.
+   it, builds still pass; diagrams are skipped with a warning. The exception
+   is `sv:uvm-schematic` in HTML, which is laid out by the bundled elkjs.
 
-Full list of the 22 `sv_*` values: `references/config.md`.
+Full list of the 28 `sv_*` values: `references/config.md`.
 
 ## Choosing a directive
 
@@ -106,7 +107,7 @@ the message itself is honest documentation.
 ```rst
 .. sv:uvm-tree::                  .. root auto-detected from run_test("...")
 .. sv:uvm-config::                .. every config_db set/get, and the orphans
-.. sv:uvm-schematic:: my_env      .. one level of wiring, agents as clusters
+.. sv:uvm-schematic:: my_env      .. one level of wiring, agents as boxes of their parts
 .. sv:uvm-sequence:: main_seq     .. one body() as a UML activity diagram
 .. sv:uvm-binding::               .. virtual interface: RTL instance -> component
 .. sv:uvm-used-by:: my_agent      .. who builds this component
@@ -192,7 +193,7 @@ repository does it in `scripts/check-docs-coverage.py`).
 | File | Covers |
 |---|---|
 | `references/directives.md` | Every directive, argument and option: `auto*`, `autosvsummary` scoping, the 15 `sv:` object directives, structure, diagrams, UVM, roles, doc fields. |
-| `references/config.md` | All 22 `sv_*` config values with defaults, plus the Sphinx settings that interact with this domain. |
+| `references/config.md` | All 28 `sv_*` config values with defaults, plus the Sphinx settings that interact with this domain. |
 | `references/comment-styles.md` | `native`, `naturaldocs`, `doxygen` and `auto`, with rules and examples. |
 | `references/uvm.md` | The six UVM views in depth: node states, black-boxing, orphan pairing, tiers, sequence notation, factory overrides. |
 | `references/troubleshooting.md` | Build symptom → cause → fix. |

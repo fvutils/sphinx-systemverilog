@@ -29,6 +29,7 @@ class _Config:
     def __init__(self, **overrides):
         self.sv_doc_style = "native"
         self.sv_macro_body = "short"
+        self.sv_diagram_layout = "elk"
         for name, default, _ in SETTINGS:
             setattr(self, name, default)
         for name, value in overrides.items():
@@ -70,3 +71,16 @@ def test_bad_macro_body_falls_back(bad):
     config = _Config(sv_macro_body=bad)
     validate_config(None, config)
     assert config.sv_macro_body == "short"
+
+
+@pytest.mark.parametrize("bad", ["dot", "", None])
+def test_bad_diagram_layout_falls_back(bad):
+    config = _Config(sv_diagram_layout=bad)
+    validate_config(None, config)
+    assert config.sv_diagram_layout == "elk"
+
+
+def test_graphviz_diagram_layout_is_kept():
+    config = _Config(sv_diagram_layout="graphviz")
+    validate_config(None, config)
+    assert config.sv_diagram_layout == "graphviz"

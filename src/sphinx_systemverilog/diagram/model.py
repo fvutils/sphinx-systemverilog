@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Iterator
 
 SIDES = ("WEST", "EAST", "NORTH", "SOUTH")
+LAYERS = ("", "FIRST", "LAST")
 
 
 @dataclass
@@ -37,7 +38,9 @@ class Box:
     """A block: a component, an instance, or the diagram's root container.
 
     *sub* is the second line under the label, usually the type.  A box with
-    children is drawn as a container around them.
+    children is drawn as a container around them.  *layer* pins the box to
+    the first or last layer (column, for a left-to-right diagram) of its
+    container.
     """
 
     id: str
@@ -48,6 +51,7 @@ class Box:
     cls: str = ""
     href: str = ""
     title: str = ""
+    layer: str = ""
 
     def walk(self) -> Iterator["Box"]:
         yield self
@@ -121,6 +125,8 @@ class Diagram:
 
         for b in self.boxes():
             claim(b.id, "box")
+            if b.layer not in LAYERS:
+                raise ValueError(f"box {b.id!r}: layer {b.layer!r} is not one of {LAYERS[1:]}")
             for p in b.ports:
                 claim(p.id, f"port of {b.id!r}")
                 if p.side not in SIDES:

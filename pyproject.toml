@@ -73,6 +73,9 @@ sphinx_systemverilog = [
     "diagram/js/elk.bundled.js",
     "diagram/js/LICENSE.md",
     "diagram/js/VERSION",
+    # the diagram renderer and its stylesheet (in git)
+    "diagram/static/*.js",
+    "diagram/static/*.css",
 ]
 
 # Consumed by IVPM's agents handler, which links the skill into .agents/skills/,

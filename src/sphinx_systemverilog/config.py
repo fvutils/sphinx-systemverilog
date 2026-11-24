@@ -132,6 +132,12 @@ def register_config(app: "Sphinx") -> None:
     # decision, taken once, in writing.
     app.add_config_value("sv_uvm_warn_orphans", False, "env", types=[bool])
 
+    # -- block diagrams ------------------------------------------------------
+    # How block diagrams (sv:uvm-schematic) are laid out: "elk" (elkjs, the
+    # default) or "graphviz", the older layout that's kept as a fallback.
+    # Non-HTML output always uses Graphviz.
+    app.add_config_value("sv_diagram_layout", "elk", "env", types=[str])
+
 
 def validate_config(app: "Sphinx", config) -> None:
     """Validate ``sv_*`` config values; emit a warning for bad input.
@@ -188,6 +194,12 @@ def validate_config(app: "Sphinx", config) -> None:
         )
         docs = {}
     config.sv_external_docs = docs
+    if config.sv_diagram_layout not in ("elk", "graphviz"):
+        logger.warning(
+            "sv_diagram_layout %r is not one of elk, graphviz; falling back to 'elk'",
+            config.sv_diagram_layout, type="systemverilog",
+        )
+        config.sv_diagram_layout = "elk"
     if config.sv_doc_style not in DOC_STYLES:
         logger.warning(
             "sv_doc_style %r is not one of %s; falling back to 'native'",

@@ -43,6 +43,8 @@ class Engine(Protocol):
 
     def layout(self, graph: dict) -> dict: ...
 
+    def render(self, laid: dict, opts: dict) -> str: ...
+
 
 def _js_file(name: str) -> Any:
     return resources.files("sphinx_systemverilog.diagram").joinpath("js", name)
@@ -57,6 +59,15 @@ def elk_version() -> str | None:
 def elk_source() -> str | None:
     f = _js_file("elk.bundled.js")
     return f.read_text(encoding="utf-8") if f.is_file() else None
+
+
+def static_file(name: str) -> Any:
+    """A file shipped in ``diagram/static/`` (the renderer and its stylesheet)."""
+    return resources.files("sphinx_systemverilog.diagram").joinpath("static", name)
+
+
+def render_source() -> str:
+    return static_file("render.js").read_text(encoding="utf-8")
 
 
 class MiniRacerElk:
@@ -76,6 +87,7 @@ class MiniRacerElk:
         self._ctx.eval(self._PRELUDE)
         self._ctx.eval(source)
         self._ctx.eval("var __elk = new ELK();")
+        self._ctx.eval(render_source())
         # A context still open at interpreter exit upsets shutdown enough that
         # nanobind (pyslang) reports every pyslang object alive then as leaked.
         atexit.register(self.close)
@@ -93,6 +105,9 @@ class MiniRacerElk:
         except Exception as e:      # mini-racer raises its own JS* error types
             raise LayoutError(f"elkjs (mini-racer): {e}") from e
 
+    def render(self, laid: dict, opts: dict) -> str:
+        return self._ctx.eval("svDiagramSvg(%s, %s)" % (json.dumps(laid), json.dumps(opts)))
+
 
 class NodeElk:
     """elkjs in a ``node`` subprocess, one process per layout."""
@@ -106,16 +121,28 @@ class NodeElk:
         "e=>{process.stderr.write(String(e));process.exit(1)}));"
     )
 
-    def __init__(self, node: str, path: str):
-        self._node, self._path = node, path
+    _RENDER = (
+        "const R=require(process.argv[1]);let s='';"
+        "process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);"
+        "process.stdout.write(R(a.g,a.o))});"
+    )
 
-    def layout(self, graph: dict) -> dict:
-        r = subprocess.run([self._node, "-e", self._SCRIPT, self._path],
-                           input=json.dumps(graph), capture_output=True, text=True,
+    def __init__(self, node: str, path: str, render_path: str):
+        self._node, self._path, self._render = node, path, render_path
+
+    def _run(self, script: str, path: str, data: Any) -> str:
+        r = subprocess.run([self._node, "-e", script, path],
+                           input=json.dumps(data), capture_output=True, text=True,
                            timeout=TIMEOUT)
         if r.returncode:
             raise LayoutError(f"elkjs (node): {r.stderr.strip()}")
-        return json.loads(r.stdout)
+        return r.stdout
+
+    def layout(self, graph: dict) -> dict:
+        return json.loads(self._run(self._SCRIPT, self._path, graph))
+
+    def render(self, laid: dict, opts: dict) -> str:
+        return self._run(self._RENDER, self._render, {"g": laid, "o": opts})
 
 
 _engine: Engine | None = None
@@ -138,8 +165,9 @@ def _make(prefer: str | None) -> tuple[Engine | None, str]:
         elif name == "node":
             node = shutil.which("node")
             if node:
-                with resources.as_file(_js_file("elk.bundled.js")) as path:
-                    return NodeElk(node, str(path)), ""
+                with resources.as_file(_js_file("elk.bundled.js")) as path, \
+                        resources.as_file(static_file("render.js")) as rpath:
+                    return NodeElk(node, str(path), str(rpath)), ""
             reasons.append("node: not on PATH")
         else:
             reasons.append(f"unknown engine {name!r}")

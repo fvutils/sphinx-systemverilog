@@ -36,7 +36,7 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 from ..model.uvm import (
     LINK_ANALYSIS,
@@ -44,6 +44,9 @@ from ..model.uvm import (
     LINK_SEQ_ITEM,
     STATE_OK,
 )
+
+if TYPE_CHECKING:
+    from ..diagram import Box, Diagram
 
 #: The tier a component is drawn in, from the §7.4 taxonomy.  The point of
 #: deriving this from the base class is that a good diagram costs *nothing* to
@@ -123,6 +126,9 @@ class _Cluster:
     type_name: str
     conditional: bool = False
     members: list[_Node] = field(default_factory=list)
+    #: The agent's own ports.  Only filled in *containers* mode, where a
+    #: connection can end on them; Graphviz clusters can't carry ports.
+    ports: tuple = ()
 
     @property
     def dot_id(self) -> str:
@@ -153,6 +159,14 @@ class Schematic:
     #: Inherited library ports left off the boxes because nothing connects to
     #: them.  Counted rather than merely dropped --- see :func:`_prune_library_ports`.
     hidden_ports: int = 0
+    #: ``:order:`` as given, for front ends that order by name rather than
+    #: through :attr:`ordered`.
+    order: list[str] = field(default_factory=list)
+    #: True when agents and the root can be connection endpoints themselves
+    #: (see :func:`build_schematic`).
+    containers: bool = False
+    #: The root's own ports, in *containers* mode.
+    root_ports: tuple = ()
 
     def node(self, path: tuple[str, ...]) -> _Node | None:
         return next((n for n in self.nodes if n.path == path), None)
@@ -160,16 +174,23 @@ class Schematic:
 
 def build_schematic(
     structure: Any, root: str, tiers: dict[str, str] | None = None,
-    order: Iterable[str] = (),
+    order: Iterable[str] = (), containers: bool = False,
 ) -> Schematic:
     """Resolve *root*'s children, their ports, and the connections between them.
 
     *tiers* overrides the derived tier, keyed on an instance handle or on a type
     name --- handle first, because that is the more specific request and the one
     a reader writing an override usually means.
+
+    *containers* lets a connection end on an agent's own port or on the
+    root's, as in ``mon.ap.connect(ap)`` inside an agent.  Graphviz can't draw
+    those (a cluster has no ports), so the DOT path leaves it off and reports
+    them as dropped; the ELK path turns it on.
     """
     overrides = tiers or {}
-    schematic = Schematic(root=root)
+    schematic = Schematic(root=root, containers=containers)
+    if containers:
+        schematic.root_ports = tuple(getattr(structure.type_of(root), "ports", ()) or ())
 
     for child in structure.children_of(root):
         info = structure.type_of(child.type_name)
@@ -184,6 +205,8 @@ def build_schematic(
                 type_name=child.type_name,
                 conditional=child.conditional,
             )
+            if containers:
+                cluster.ports = tuple(getattr(info, "ports", ()) or ())
             for inner in grandchildren:
                 inner_info = structure.type_of(inner.type_name)
                 node = _Node(
@@ -221,7 +244,8 @@ def build_schematic(
     _apply_tier_overrides(schematic, overrides)
     _collect_edges(structure, root, schematic)
     _prune_library_ports(schematic)
-    _apply_order(schematic, list(order))
+    schematic.order = list(order)
+    _apply_order(schematic, schematic.order)
     # Mirroring is by final position, so it has to follow any reordering ---
     # otherwise ``:order:`` could put two same-facing agents side by side and
     # reintroduce exactly the crossings knob 4 exists to remove.
@@ -271,14 +295,18 @@ def _collect_edges(structure: Any, root: str, schematic: Schematic) -> None:
     and each instance really does make that connection.
     """
     drawn = {node.path for node in schematic.nodes}
+    if schematic.containers:
+        drawn |= {cluster.path for cluster in schematic.clusters}
 
     scopes = [((), root)]
     scopes += [(cluster.path, cluster.type_name) for cluster in schematic.clusters]
 
     for prefix, owner_type in scopes:
         for connection in structure.connections_of(owner_type):
-            source = _place(structure, owner_type, prefix, connection.source, drawn)
-            target = _place(structure, owner_type, prefix, connection.target, drawn)
+            source = _place(structure, owner_type, prefix, connection.source, drawn,
+                            schematic.containers)
+            target = _place(structure, owner_type, prefix, connection.target, drawn,
+                            schematic.containers)
             if source is None or target is None:
                 schematic.dropped.append(
                     f"{connection.source.text} → {connection.target.text} "
@@ -294,7 +322,7 @@ def _collect_edges(structure: Any, root: str, schematic: Schematic) -> None:
 
 def _place(
     structure: Any, owner_type: str, prefix: tuple[str, ...], endpoint,
-    drawn: set[tuple[str, ...]],
+    drawn: set[tuple[str, ...]], containers: bool = False,
 ) -> tuple[tuple[str, ...], str] | None:
     """``(instance path, port)`` for an endpoint, or ``None`` if not in view.
 
@@ -306,6 +334,9 @@ def _place(
       component that has no children, so the edge belongs on ``vseqr``;
     * a connection reaching three levels down is real, and a single-level view
       draws it arriving at the box it can see.
+
+    With *containers*, an endpoint that is a port of the root itself
+    (``ap`` in the root's ``connect_phase``) places at path ``()``.
     """
     path = list(prefix)
     type_name = owner_type
@@ -323,6 +354,8 @@ def _place(
     while path and tuple(path) not in drawn:
         path.pop()
     if not path:
+        if containers and not endpoint.path and endpoint.port:
+            return (), endpoint.port
         return None
     return tuple(path), endpoint.port
 
@@ -347,13 +380,19 @@ def _prune_library_ports(schematic: Schematic) -> None:
         connected.add(source)
         connected.add(target)
 
-    for node in schematic.nodes:
+    def prune(path: tuple[str, ...], ports: tuple) -> tuple:
         kept = tuple(
-            port for port in node.ports
-            if not port.library or (node.path, port.name) in connected
+            port for port in ports
+            if not port.library or (path, port.name) in connected
         )
-        schematic.hidden_ports += len(node.ports) - len(kept)
-        node.ports = kept
+        schematic.hidden_ports += len(ports) - len(kept)
+        return kept
+
+    for node in schematic.nodes:
+        node.ports = prune(node.path, node.ports)
+    for cluster in schematic.clusters:
+        cluster.ports = prune(cluster.path, cluster.ports)
+    schematic.root_ports = prune((), schematic.root_ports)
 
 
 def _apply_order(schematic: Schematic, order: list[str]) -> None:
@@ -543,6 +582,119 @@ def _escape(text: str) -> str:
 
 def _ident(text: str) -> str:
     return _ID_SAFE.sub("_", str(text)) or "schematic"
+
+
+# -- Diagram (ELK) ------------------------------------------------------------
+#
+# The ELK layout is left to right, so data flows the way it reads: a port
+# (which sends) goes on a box's east side and an export or imp (which
+# receives) on its west.  seq_item is the exception, because the driver pulls:
+# ``drv.seq_item_port.connect(seqr.seq_item_export)`` is drawn from the
+# sequencer's east side to the driver's west, the way the items go.
+#
+# :tier: still means something here, but less: ``top`` pins a component to
+# the first column and ``bottom`` to the last.  The derived tiers aren't
+# used, since ELK places by connectivity, which is what they approximated.
+
+#: :tier: value -> ELK layer constraint.
+_LAYER_BY_TIER = {TIER_TOP: "FIRST", TIER_BOTTOM: "LAST"}
+
+
+def _port_side(port) -> str:
+    receives = port.role in ("export", "imp")
+    if port.link == LINK_SEQ_ITEM:
+        receives = not receives
+    return "WEST" if receives else "EAST"
+
+
+def _box_id(path: tuple[str, ...]) -> str:
+    return "/".join(path) or "@root"
+
+
+def build_schematic_diagram(
+    schematic: Schematic, tiers: dict[str, str] | None = None,
+) -> "Diagram":
+    """The schematic as a :class:`~sphinx_systemverilog.diagram.Diagram`.
+
+    Best built from a schematic made with ``containers=True``, so connections
+    at an agent's or the root's own ports are drawn.  *tiers* is the
+    directive's ``:tier:`` (not the derived tiers).
+    """
+    from ..diagram import Box, Diagram, Edge, Port
+
+    overrides = tiers or {}
+    ports_of: dict[str, set[str]] = {}
+
+    def ports(path: tuple[str, ...], declared: tuple) -> list:
+        bid = _box_id(path)
+        ports_of[bid] = {p.name for p in declared}
+        return [
+            Port(f"{bid}:{p.name}", p.name, _port_side(p), p.link,
+                 title=f"{p.name} : {p.type_name}" if p.type_name else p.name)
+            for p in declared
+        ]
+
+    def flags(conditional: bool, state: str = STATE_OK) -> tuple[str, str]:
+        tags = (["conditional"] if conditional else []) + \
+            ([state] if state != STATE_OK else [])
+        return "".join(f" [{t}]" for t in tags), "".join(
+            " cond" if t == "conditional" else " opaque" for t in tags)
+
+    def layer(handle: str, type_name: str) -> str:
+        return _LAYER_BY_TIER.get(overrides.get(handle) or overrides.get(type_name), "")
+
+    def leaf(node: _Node) -> "Box":
+        tag, cls = flags(node.conditional, node.state)
+        return Box(_box_id(node.path), node.handle, node.type_name + tag,
+                   ports=ports(node.path, node.ports), cls="leaf" + cls,
+                   title=f"{node.handle} : {node.type_name}{tag}",
+                   layer="" if node.parent else layer(node.handle, node.type_name))
+
+    def cluster_box(cluster: _Cluster) -> "Box":
+        tag, cls = flags(cluster.conditional)
+        return Box(_box_id(cluster.path), cluster.handle, cluster.type_name + tag,
+                   ports=ports(cluster.path, cluster.ports),
+                   children=[leaf(n) for n in cluster.members], cls="cont" + cls,
+                   title=f"{cluster.handle} : {cluster.type_name}{tag}",
+                   layer=layer(cluster.handle, cluster.type_name))
+
+    # Top level in source order: a cluster stands where its first member was.
+    items: list[tuple[str, Box]] = []
+    clusters = {c.path: c for c in schematic.clusters}
+    for node in schematic.nodes:
+        if not node.parent:
+            items.append((node.handle, leaf(node)))
+        elif node.parent in clusters:
+            c = clusters.pop(node.parent)
+            items.append((c.handle, cluster_box(c)))
+    if schematic.order:
+        rank = {name: i for i, name in enumerate(schematic.order)}
+        items = [it for _, it in sorted(
+            enumerate(items), key=lambda x: (rank.get(x[1][0], len(rank)), x[0]))]
+
+    root = Box(_box_id(()), schematic.root, cls="cont",
+               ports=ports((), schematic.root_ports), children=[b for _, b in items])
+
+    def end(endpoint: tuple) -> str:
+        path, port = endpoint
+        bid = _box_id(path)
+        return f"{bid}:{port}" if port in ports_of.get(bid, ()) else bid
+
+    # One hyperedge per (source, kind, conditional), so a fan-out is drawn as
+    # one trunk with a junction dot.
+    merged: dict[tuple, Edge] = {}
+    for source, target, kind, conditional in schematic.edges:
+        if kind == LINK_SEQ_ITEM:
+            source, target = target, source
+        a, b = end(source), end(target)
+        if a == b:
+            continue
+        key = (a, kind, conditional)
+        edge = merged.setdefault(key, Edge(a, [], kind, conditional=conditional))
+        if b not in edge.targets:
+            edge.targets.append(b)
+
+    return Diagram(root, edges=list(merged.values()), model_order=bool(schematic.order))
 
 
 # -- Graphviz capability ------------------------------------------------------

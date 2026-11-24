@@ -174,8 +174,10 @@ decision a project takes for itself, once, in writing.
 
 One level of a testbench, drawn: the components a container builds, the TLM
 ports they declare, and the connections its `connect_phase` makes. Agents are
-rendered as clusters holding their own components, because "is this agent
-active?" is answered by whether it holds a driver.
+rendered as boxes holding their own components, because "is this agent
+active?" is answered by whether it holds a driver. In HTML it is laid out with
+ELK, left to right in the direction data flows; see
+[Diagrams](uvm-schematic-layout) for the layout and the Graphviz fallback.
 
 The argument names the container. With none, the root is auto-detected as for
 `sv:uvm-tree` and then descended: a test that contains exactly one env draws as
@@ -184,8 +186,8 @@ exactly one child and stops at the first env — the level where wiring exists.
 
 | Option | Meaning |
 |---|---|
-| `:tier:` | `name=top\|middle\|bottom`, comma-separated. Overrides the derived tier for one component. Matches an instance handle first, then a type name. |
-| `:order:` | Component handles, left to right. Applies within a tier — two boxes on different ranks have no left-to-right relationship to state. |
+| `:tier:` | `name=top\|middle\|bottom`, comma-separated. Overrides the derived tier for one component. Matches an instance handle first, then a type name. With ELK, `top` pins the component to the leftmost column and `bottom` to the rightmost; `middle` leaves it where its connections put it. |
+| `:order:` | Component handles, in the order to draw them. With Graphviz the order is left to right within a tier, since two boxes on different ranks have no left-to-right relationship to state. With ELK it is the order the layout keeps where the connections leave it a choice. |
 | `:optional:` | Render nothing, and warn about nothing, if the component does not exist or builds nothing. |
 
 **Single-level, by decision.** Depth is already served by `sv:uvm-tree`, which
@@ -196,6 +198,10 @@ than rejected.
 
 (uvm-tiers)=
 ### Tiers come from UVM's taxonomy, not from configuration
+
+Tiers are how the Graphviz layout is kept readable. The ELK layout doesn't need
+them, because it places components by their connections, and uses only the
+`:tier:` overrides you write (see the table above).
 
 The important design point is that **"agents at the bottom" costs nothing to
 author.** UVM's base-class hierarchy already encodes the roles, so the default
@@ -871,6 +877,7 @@ not "pretend this is not here".
 | `sv_uvm_tree_depth` | `4` | Default depth for `sv:uvm-tree`. `test → env → agent → driver` is 4. |
 | `sv_uvm_max_components` | `5000` | Ceiling on components visited. Exceeding it reports truncation rather than hanging the build. |
 | `sv_uvm_warn_orphans` | `False` | Also emit build warnings for orphaned `config_db` fields. See [above](uvm-orphan-caveats). |
+| `sv_diagram_layout` | `"elk"` | How `sv:uvm-schematic` is laid out in HTML: `"elk"` or `"graphviz"`. See [Diagrams](uvm-schematic-layout). |
 
 ## Cost
 

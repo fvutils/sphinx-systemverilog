@@ -119,6 +119,9 @@ def setup(app: Any) -> dict[str, Any]:
     app.setup_extension("sphinx.ext.graphviz")
 
     register_config(app)
+    from .diagram import sphinx as diagram_sphinx
+
+    diagram_sphinx.setup(app)
     app.add_domain(SystemVerilogDomain)
     app.add_directive_to_domain("sv", "inheritance-diagram", SvInheritanceDiagram)
     app.add_directive_to_domain("sv", "instance-diagram", SvInstanceDiagram)

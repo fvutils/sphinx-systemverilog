@@ -88,6 +88,7 @@ and a testbench top that drags in the whole DUT is usually not what you meant.
 | `sv_uvm_tree_depth` | `4` | int (≥1) | Default `:depth:` for `sv:uvm-tree` (`test → env → agent → driver` is 4). |
 | `sv_uvm_max_components` | `5000` | int (≥1) | Ceiling on components visited; exceeding it reports truncation rather than hanging the build. |
 | `sv_uvm_warn_orphans` | `False` | bool | Also emit build warnings for orphaned `config_db` fields. The finding is always rendered in the page regardless. |
+| `sv_diagram_layout` | `"elk"` | `"elk"` \| `"graphviz"` | How `sv:uvm-schematic` is laid out in HTML. `"elk"` falls back to Graphviz, with a warning, when elkjs is missing. Non-HTML output always uses Graphviz. |
 
 ```python
 sv_uvm_blackbox = ["*_reg_block", "acme_vip_*"]

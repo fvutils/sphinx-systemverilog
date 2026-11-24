@@ -159,8 +159,11 @@ green build red over a testbench smell nobody asked about.
 
 One level of a testbench: the components a container builds, the TLM ports they
 declare, and the connections its `connect_phase` makes. Agents render as
-clusters holding their components — "is this agent active?" is answered by
-whether it holds a driver.
+boxes holding their components — "is this agent active?" is answered by
+whether it holds a driver. HTML output is laid out by ELK (elkjs, shipped in the
+package) as inline SVG, left to right in the direction data flows; non-HTML
+builders, and HTML with `sv_diagram_layout = "graphviz"` or without elkjs, use
+the Graphviz layout described under *Layout note*.
 
 With no argument the root is auto-detected as for `sv:uvm-tree`, then descended
 while there is exactly one child, stopping at the first env — the level where
@@ -168,8 +171,8 @@ wiring exists.
 
 | Option | Meaning |
 |---|---|
-| `:tier:` | `name=top\|middle\|bottom`, comma-separated. Matches an instance handle first, then a type name. |
-| `:order:` | Component handles, left to right, **within a tier**. |
+| `:tier:` | `name=top\|middle\|bottom`, comma-separated. Matches an instance handle first, then a type name. ELK: `top` = leftmost column, `bottom` = rightmost, `middle` = no constraint. |
+| `:order:` | Component handles, in drawing order. Graphviz: left to right **within a tier**. ELK: the order kept where connections leave a choice. |
 | `:optional:` | Render nothing, silently, if the component does not exist or builds nothing. |
 
 **Single-level by decision** — depth is `sv:uvm-tree`'s job, and it does it well
@@ -212,7 +215,9 @@ rather than dropped.
 
 ### Layout note
 
-Every TLM edge carries `constraint=false` so connectivity decorates the layout
+ELK lets a connection end on an agent's own port or on the drawn component's
+boundary (`mon.ap.connect(ap)` inside an agent); Graphviz can't, and reports
+those as connections it doesn't draw. In the Graphviz layout, every TLM edge carries `constraint=false` so connectivity decorates the layout
 instead of fighting it; containment decides ranks; tiers are pinned with
 `rank=same`, which needs `newrank=true` (Graphviz ≥ 2.30). With an older `dot`
 the tier pinning is dropped and the diagram says so underneath.

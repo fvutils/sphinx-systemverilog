@@ -188,24 +188,22 @@ Read it against
 [the source](https://github.com/fvutils/sphinx-systemverilog/blob/main/tests/fixtures/uvm_tb/tlm_tb.sv).
 Four things in that picture are the point of the feature:
 
-The scoreboard is **above** the agents
-: This is the whole reason the layout work exists. Graphviz treats every edge
-  as a ranking constraint, so the analysis edge running from `mon.ap` up to
-  `sb.aimp` would ordinarily drag `sb` down among the agents — which is exactly
-  the failure a published attempt at this diagram ran into. Every TLM edge here
-  carries `constraint=false`, so connectivity decorates the layout instead of
-  deciding it.
+Data flows left to right
+: Each monitor's analysis port is on the right of its box and the scoreboard's
+  and coverage collector's imps are on the left of theirs, so the analysis
+  edges run in the direction the transactions go. The layout (ELK's layered
+  algorithm) places the boxes from those connections: nothing was configured
+  to put `sb` and `cov` to the right of the agents.
 
-The agents are clusters, **and** pinned to a tier
-: Graphviz's default ranking cannot express that: a node cannot be inside a
-  cluster and also `rank=same` with a node outside it. `newrank=true` is what
-  removes the restriction, and without it this diagram is not merely uglier, it
-  is inexpressible.
+The agents are boxes holding their components
+: "Is this agent active?" is answered by whether it holds a driver. An agent
+  can carry ports of its own, and a connection can end on them; the Graphviz
+  layout, which draws agents as clusters, can't do that.
 
 `vseqr` has edges at all
 : Its wiring is `vseqr.seqr_a = agt_a.seqr` — an assignment, not a
   `connect` call. A walker reading only calls would draw the one component
-  whose entire purpose is its connections with none.
+  whose entire purpose is its connections with none. Handle edges are dashed.
 
 `drv` shows `seq_item_port` and not `rsp_port`
 : Neither is declared by `tlm_driver`; both come from `uvm_driver`. One is
@@ -217,16 +215,17 @@ The agents are clusters, **and** pinned to a tier
 
 Both agents are drawn from one `tlm_agent`, and each gets its own
 sequencer-to-driver edge, because the source describes the type and each
-instance really makes the connection. Those edges are dotted: the agent wires
-them under `if (is_active)`.
+instance really makes the connection. The edge goes from the sequencer to the
+driver, the way the items go, and it and both boxes are dotted: the agent
+creates and wires them under `if (is_active)`.
 
 ### Nothing here was configured
 
-The tier each component sits in comes from what it extends —
-`uvm_sequencer` on top, `uvm_scoreboard` and `uvm_subscriber` in the middle,
-`uvm_agent` at the bottom. The directive above has no options. `:tier:` and
-`:order:` exist for the exceptions, and a diagram that needed them to look like
-this would be a diagram nobody kept using.
+The directive above has no options. `:order:` and `:tier:` exist for the
+exceptions, and a diagram that needed them to look like this would be a
+diagram nobody kept using. PDF output, and HTML with
+`sv_diagram_layout = "graphviz"`, draw the same schematic with Graphviz; see
+[Diagrams](../usage/diagrams.md) for how that layout works.
 
 ## The sequence
 

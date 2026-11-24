@@ -1,0 +1,54 @@
+/* Block diagrams drawn by sphinx_systemverilog.diagram (render.js).
+ *
+ * Light by default.  Dark only where the theme says the page is dark:
+ * data-theme="dark" (furo, pydata-sphinx-theme), or data-theme="auto" with a
+ * dark system preference.  A bare prefers-color-scheme query would turn the
+ * diagrams dark on themes that are always light. */
+div.sv-diagram { overflow-x: auto; margin: 0.5em 0 1em; }
+div.sv-diagram svg { display: block; max-width: none; height: auto; }
+
+.svd {
+  --sv-fg: #1f2328; --sv-muted: #59636e; --sv-box: #ffffff; --sv-cont: #f6f8fa;
+  --sv-stroke: #8c959f; --sv-analysis: #2563eb; --sv-seq: #b45309;
+  --sv-tlm: #0f766e; --sv-handle: #7c3aed; --sv-wire: #1f2328;
+  font-family: "DejaVu Sans", Verdana, sans-serif;
+}
+html[data-theme="dark"] .svd, body[data-theme="dark"] .svd {
+  --sv-fg: #e6edf3; --sv-muted: #9198a1; --sv-box: #161b22; --sv-cont: #0d1117;
+  --sv-stroke: #3d444d; --sv-analysis: #60a5fa; --sv-seq: #f59e0b;
+  --sv-tlm: #2dd4bf; --sv-handle: #a78bfa; --sv-wire: #e6edf3;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-theme="auto"] .svd, body[data-theme="auto"] .svd {
+    --sv-fg: #e6edf3; --sv-muted: #9198a1; --sv-box: #161b22; --sv-cont: #0d1117;
+    --sv-stroke: #3d444d; --sv-analysis: #60a5fa; --sv-seq: #f59e0b;
+    --sv-tlm: #2dd4bf; --sv-handle: #a78bfa; --sv-wire: #e6edf3;
+  }
+}
+
+/* Sizes match CHAR_W and LINE_H in elk.py, which sized the boxes. */
+.svd text { fill: var(--sv-fg); font-size: 10px; }
+.svd .t-name { font-size: 12px; font-weight: 600; }
+.svd .t-sub, .svd .t-port, .svd .t-edge { fill: var(--sv-muted); }
+
+.svd .box rect { stroke: var(--sv-stroke); stroke-width: 1; }
+.svd .leaf > rect, .svd .leaf > a > rect { fill: var(--sv-box); }
+.svd .cont > rect, .svd .cont > a > rect { fill: var(--sv-cont); }
+.svd .box.cond > rect, .svd .box.cond > a > rect { stroke-dasharray: 4 3; }
+.svd .box.opaque > rect, .svd .box.opaque > a > rect { fill: var(--sv-cont); stroke-dasharray: 1 2; }
+.svd .box a:hover > rect { stroke-width: 2; }
+.svd .box rect.port { fill: var(--sv-stroke); stroke: none; }
+
+.svd .e path { fill: none; stroke: var(--sv-wire); stroke-width: 1.4; }
+.svd .e .j, .svd .ah { fill: var(--sv-wire); }
+.svd .e.k-analysis path { stroke: var(--sv-analysis); }
+.svd .e.k-analysis .j, .svd .ah.k-analysis { fill: var(--sv-analysis); }
+.svd .e.k-seq_item path { stroke: var(--sv-seq); }
+.svd .e.k-seq_item .j, .svd .ah.k-seq_item { fill: var(--sv-seq); }
+.svd .e.k-tlm path { stroke: var(--sv-tlm); }
+.svd .e.k-tlm .j, .svd .ah.k-tlm { fill: var(--sv-tlm); }
+.svd .e.k-handle path { stroke: var(--sv-handle); stroke-dasharray: 5 3; }
+.svd .e.k-handle .j, .svd .ah.k-handle { fill: var(--sv-handle); }
+.svd .e.cond path { stroke-dasharray: 2 2; }
+.svd .e.k-bundle path { stroke-width: 3; }
+.svd .e:hover path { stroke-width: 2.4; }
