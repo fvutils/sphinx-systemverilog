@@ -45,10 +45,11 @@ _fixture_files = [
 # The structural-documentation example page needs a design with a real
 # hierarchy: generate loops, an instance array, and one module elaborated at two
 # different widths.  That is exactly the M1 test fixture, so the example page
-# renders from the same source the tests assert against.
+# renders from the same source the tests assert against.  `rtl_block` is the
+# small pipeline the block-diagram example draws.
 _designs = [
     os.path.abspath(os.path.join(_here, "..", "tests", "fixtures", d))
-    for d in ("design", "design_collapse")
+    for d in ("design", "design_collapse", "rtl_block")
 ]
 _design_files = [
     os.path.join(d, f)

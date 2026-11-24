@@ -340,6 +340,11 @@ def test_the_diagram_nests_each_agent_around_its_components(diagram):
     assert top == ["agt_a", "agt_b", "sb", "cov", "vseqr"], "source order"
     assert {c.label for c in _box(diagram, "agt_a").children} == {"seqr", "drv", "mon"}
     assert _box(diagram, "agt_a").cls == "cont"
+    # every component box links to its type's documentation; the root doesn't
+    agt = _box(diagram, "agt_a")
+    assert agt.href == "svref:" + agt.sub
+    assert all(b.href.startswith("svref:") for b in diagram.boxes() if b is not diagram.root)
+    assert diagram.root.href == ""
     diagram.validate()
 
 
@@ -460,6 +465,9 @@ def test_html_gets_the_elk_diagram_inline(app):
     assert (app.outdir / "_static" / "sv-diagram.css").is_file()
     # each diagram's arrowheads have their own ids
     assert len(set(re.findall(r'<marker id="(svd[0-9a-f]+)-ah-analysis"', page))) == 3
+    # box links are resolved or dropped (this project documents no classes)
+    assert any("svref:" in d["svg"] for d in drawn)
+    assert "svref:" not in page
 
 
 @pytest.mark.sphinx

@@ -1,11 +1,12 @@
 # Diagrams
 
-Four kinds of diagram are available: **inheritance diagrams** for class
+Five kinds of diagram are available: **inheritance diagrams** for class
 hierarchies, **instance diagrams** for the structural composition of an RTL
-design, **UVM schematics** for how a testbench's components are wired together,
-and **UVM activity diagrams** for what a sequence does. UVM schematics in HTML
-are laid out with [ELK](https://eclipse.dev/elk/) and drawn as inline SVG; the
-rest render with
+design, **block diagrams** for how an RTL module's instances are wired,
+**UVM schematics** for how a testbench's components are wired together, and
+**UVM activity diagrams** for what a sequence does. Block diagrams, and UVM
+schematics in HTML, are laid out with [ELK](https://eclipse.dev/elk/) and drawn
+as inline SVG; the rest render with
 [`sphinx.ext.graphviz`](https://www.sphinx-doc.org/en/master/usage/extensions/graphviz.html).
 
 ## Prerequisite
@@ -91,6 +92,45 @@ margin the most expensive thing this extension does. It happens once per
 change of the sources, when the [design database](database.md) is built. See
 [Elaboration cost](elaboration-cost) if your design is large.
 
+(block-diagrams)=
+## Block diagrams
+
+`sv:block-diagram` draws how one module's parts are wired: its child instances
+as boxes, its own ports on the border, and each net as an edge from the port
+that drives it to the ports that read it.
+
+```rst
+.. sv:block-diagram:: pipe_top
+   :connections: bundled
+   :order: u_fetch, u_decode, u_exec
+   :hide: ^(clk|rst)
+```
+
+| Option | Meaning |
+|---|---|
+| `:connections:` | `nets`: one edge per net, between the named ports. `bundled`: every net from one block to another merged into one bus, labelled with the source and its signal count and width; the module itself counts as a block. `auto` (the default): `nets` up to about 40 nets, `bundled` above. |
+| `:order:` | Instance names in the order the data flows through them. Feedback makes a pipeline cyclic; the layout breaks the cycles in this order, so the main path reads left to right. |
+| `:hide:` | A regular expression; nets whose name matches it are not drawn. The default hides clocks and resets (`clk…`, `rst…`, `…_clk`, `…_rst_n`, …). `none` shows everything. |
+
+Inputs are on the left of a box, outputs on the right and inouts below.
+Interface ports are drawn as one thick, undirected connection rather than as
+their signals. Each box links to its module's page when that module is
+documented.
+
+What the diagram can't show, it says under the picture:
+
+- **Nets driven by logic in the module** (an `assign` or a process) have no
+  driver in the database, so their readers show an unconnected input and the
+  note lists them.
+- **Widths** come from the declared port type when its range is constant
+  (`logic [31:0]`). A range over a parameter is not evaluated, so a bus with
+  one leaves the bit count out of its label.
+
+The block diagram is laid out by ELK only, like the HTML schematic below.
+There is no Graphviz version: `sv_diagram_layout = "graphviz"` doesn't apply
+to it, and LaTeX and other non-HTML output show a one-line placeholder. See
+[the example](../examples/design.md) for one drawn from a small pipeline.
+
 ## UVM schematics
 
 `sv:uvm-schematic` draws one level of a testbench: the components a container
@@ -115,7 +155,8 @@ the page as SVG, so it follows the page's light or dark theme and its text can
 be searched. ELK places boxes by their connections, routes edges at right
 angles, and lets a connection end on an agent's own port or on the boundary of
 the component being drawn. Graphviz can't draw either of those, because a
-cluster has no ports.
+cluster has no ports. A dot marks where a fan-out splits, and each box links to
+its class's documentation when that class is documented in the project.
 
 The Graphviz drawing described below is still made. It is what LaTeX, text and
 other non-HTML builders render, and what HTML falls back to when ELK can't run:

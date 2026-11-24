@@ -1,6 +1,6 @@
 ---
 name: sphinx-systemverilog
-description: Write Sphinx documentation for SystemVerilog and UVM source with the sphinx-systemverilog extension - conf.py setup (sv_source_dirs, sv_build_units, sv_doc_style), the autosvclass/autosvmodule/autosvsummary directives, the sv domain directives and roles, RTL structure views (instance tree, used-by, parameter matrix, instance diagram), UVM testbench views (component tree, config_db table, schematic, sequence activity diagram, virtual-interface bindings, factory overrides), the native/NaturalDocs/Doxygen doc-comment dialects, and diagnosing SystemVerilog documentation build warnings. Use when a Sphinx project lists sphinx_systemverilog in extensions, when a page contains an autosv* or sv: directive, or when asked to document SystemVerilog, RTL or UVM source with Sphinx.
+description: Write Sphinx documentation for SystemVerilog and UVM source with the sphinx-systemverilog extension - conf.py setup (sv_source_dirs, sv_build_units, sv_doc_style), the autosvclass/autosvmodule/autosvsummary directives, the sv domain directives and roles, RTL structure views (instance tree, used-by, parameter matrix, instance diagram, block diagram), UVM testbench views (component tree, config_db table, schematic, sequence activity diagram, virtual-interface bindings, factory overrides), the native/NaturalDocs/Doxygen doc-comment dialects, and diagnosing SystemVerilog documentation build warnings. Use when a Sphinx project lists sphinx_systemverilog in extensions, when a page contains an autosv* or sv: directive, or when asked to document SystemVerilog, RTL or UVM source with Sphinx.
 ---
 
 # sphinx-systemverilog
@@ -48,7 +48,8 @@ Checklist, in order:
    pay for hierarchy elaboration on every module page.
 4. **Install Graphviz** (`dot` on `PATH`) only if you want diagrams. Without
    it, builds still pass; diagrams are skipped with a warning. The exception
-   is `sv:uvm-schematic` in HTML, which is laid out by the bundled elkjs.
+   is `sv:uvm-schematic` in HTML and `sv:block-diagram`, which are laid out
+   by the bundled elkjs.
 
 Full list of the 28 `sv_*` values: `references/config.md`.
 
@@ -61,6 +62,7 @@ Full list of the 28 `sv_*` values: `references/config.md`.
 | one declaration, written by hand | `sv:class::`, `sv:module::`, `sv:function::`, … (15 object directives) |
 | what an RTL module is built from / used by / parameterised at | `sv:instance-tree`, `sv:used-by`, `sv:parameter-matrix` |
 | a class hierarchy or module graph as a picture | `sv:inheritance-diagram`, `sv:instance-diagram` |
+| how an RTL module's instances are wired | `sv:block-diagram` (`:connections: bundled` for a big module, `:order:` for a pipeline) |
 | a UVM testbench | `sv:uvm-tree`, `sv:uvm-config`, `sv:uvm-schematic`, `sv:uvm-sequence`, `sv:uvm-binding`, `sv:uvm-used-by` |
 | a reference to any of the above | `:sv:class:`, `:sv:mod:`, `:sv:func:`, `:sv:obj:`, … |
 

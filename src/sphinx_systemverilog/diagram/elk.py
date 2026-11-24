@@ -121,7 +121,8 @@ def to_elk(d: Diagram, options: dict[str, str] | None = None) -> dict:
     """Return the ELK JSON graph for *d*.  *options* override the root's layout options.
 
     A hyperedge becomes one ELK edge per target (``e3.0``, ``e3.1``, ...);
-    ``mergeEdges`` draws them as one trunk that fans out.  A bundle's edge
+    ``mergeEdges`` draws them as one trunk that fans out, and ``group``
+    tells the renderer which edges to put junction dots on.  A bundle's edge
     carries its members, unlaid, under ``members``.
     """
     d.validate()
@@ -140,6 +141,8 @@ def to_elk(d: Diagram, options: dict[str, str] | None = None) -> dict:
                 "sources": [e.source], "targets": [t],
                 "kind": e.kind, "title": e.title, **extra,
             }
+            if len(e.targets) > 1:
+                ed["group"] = eid
             if e.label and k == 0:
                 ed["labels"] = [_label(e.label, "edge")]
             if e.priority:
@@ -154,4 +157,20 @@ def to_elk(d: Diagram, options: dict[str, str] | None = None) -> dict:
         add(f"b{i}", b, {"members": [
             {"source": m.source, "targets": list(m.targets), "label": m.label, "kind": m.kind}
             for m in b.members]})
+
+    # A one-level diagram (no box inside the root has children) is laid out
+    # as the root box's own graph.  Under INCLUDE_CHILDREN, model-order cycle
+    # breaking has no effect, and the CVA6 pipeline only reads left to right
+    # with it (see "RTL: CVA6" in docs/design/block-diagram-layout.md).
+    if not any(c.children for c in d.root.children):
+        mod = root["children"][0]
+        mod["edges"], root["edges"] = root["edges"], []
+        opts["elk.hierarchyHandling"] = "SEPARATE_CHILDREN"
+        mod.setdefault("layoutOptions", {}).update(
+            {k: v for k, v in opts.items() if k not in _OUTER_ONLY})
     return root
+
+
+#: Options that stay on the outer graph when the root box is laid out as its
+#: own graph; everything else is copied onto the root box.
+_OUTER_ONLY = {"elk.hierarchyHandling", "elk.json.shapeCoords", "elk.json.edgeCoords"}

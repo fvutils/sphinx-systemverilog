@@ -184,6 +184,7 @@ first one in a build pays for it and every later one reuses it.
 | `sv:used-by` | module | `:limit: N` (default `sv_used_by_limit`, 50; `0` = no cap), `:optional:` |
 | `sv:parameter-matrix` | module | `:optional:` |
 | `sv:instance-diagram` | module | *(none)* |
+| `sv:block-diagram` | module | `:connections:` (`auto` / `nets` / `bundled`), `:order:` instance names in dataflow order, `:hide:` regex of nets not drawn (default clocks and resets; `none` = all) |
 | `sv:inheritance-diagram` | class | `:optional:` |
 
 Reading an instance tree:

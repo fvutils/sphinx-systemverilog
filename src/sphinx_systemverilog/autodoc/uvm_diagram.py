@@ -621,6 +621,7 @@ def build_schematic_diagram(
     directive's ``:tier:`` (not the derived tiers).
     """
     from ..diagram import Box, Diagram, Edge, Port
+    from ..diagram.sphinx import XREF
 
     overrides = tiers or {}
     ports_of: dict[str, set[str]] = {}
@@ -647,6 +648,7 @@ def build_schematic_diagram(
         tag, cls = flags(node.conditional, node.state)
         return Box(_box_id(node.path), node.handle, node.type_name + tag,
                    ports=ports(node.path, node.ports), cls="leaf" + cls,
+                   href=XREF + node.type_name,
                    title=f"{node.handle} : {node.type_name}{tag}",
                    layer="" if node.parent else layer(node.handle, node.type_name))
 
@@ -655,6 +657,7 @@ def build_schematic_diagram(
         return Box(_box_id(cluster.path), cluster.handle, cluster.type_name + tag,
                    ports=ports(cluster.path, cluster.ports),
                    children=[leaf(n) for n in cluster.members], cls="cont" + cls,
+                   href=XREF + cluster.type_name,
                    title=f"{cluster.handle} : {cluster.type_name}{tag}",
                    layer=layer(cluster.handle, cluster.type_name))
 

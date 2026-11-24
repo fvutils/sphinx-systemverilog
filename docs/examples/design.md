@@ -96,3 +96,51 @@ structural overview a picture can be clearer:
 .. sv:instance-tree:: soc
    :diagram:
 ```
+
+## What is connected to what
+
+The instance tree says what a module is built from; `sv:block-diagram` says how
+the parts are wired. It draws one module: its child instances as boxes, its own
+ports on the border, and each net as an edge from the port that drives it to
+the ports that read it. This one is drawn from `tests/fixtures/rtl_block/`, a
+four-stage pipeline with a controller feeding back into it:
+
+```{eval-rst}
+.. sv:block-diagram:: pipe_top
+```
+
+Four things in that picture come from the database rather than from reading
+the instantiations one by one:
+
+- **Every connection style resolves to the same nets.** `u_fetch` connects
+  `.clk` implicitly and `u_ctrl` connects everything with `.*`; both are drawn
+  like the named connections around them.
+- **Directions come from the child modules**, so outputs sit on the right of a
+  box and inputs on the left, and the `stall` and `flush` feedback from
+  `u_ctrl` runs back against the flow.
+- **The interface port `cfg`** is drawn as one thick, undirected connection
+  rather than as its signals.
+- **`pc_in` has no driver in the picture**, because it is driven by an
+  `assign` in `pipe_top`, which the database doesn't record. The note under
+  the diagram says so rather than leaving a silent gap.
+
+Clocks and resets are hidden by default: they reach every block and say nothing
+about the dataflow.
+
+### Bundled
+
+A real module has far more nets than this one. `:connections: bundled` merges
+every net from one block to another into one bus, labelled with the source and
+its signal count and width (`u_fetch (3, 65b)`: three signals, 65 bits). The
+module itself counts as a block. Above about 40 nets this is what the default
+picks; here it is asked for explicitly:
+
+```{eval-rst}
+.. sv:block-diagram:: pipe_top
+   :connections: bundled
+   :order: u_fetch, u_decode, u_exec
+```
+
+`:order:` lists the blocks in the order the data flows through them. Feedback
+paths make a pipeline cyclic, and the layout breaks those cycles in that order,
+so the main path reads left to right.

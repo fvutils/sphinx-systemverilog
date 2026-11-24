@@ -109,7 +109,7 @@ def _build_index(app: Any) -> None:
 
 def setup(app: Any) -> dict[str, Any]:
     from .autodoc import AUTODOC_DIRECTIVES
-    from .autodoc.diagrams import SvInheritanceDiagram, SvInstanceDiagram
+    from .autodoc.diagrams import SvBlockDiagram, SvInheritanceDiagram, SvInstanceDiagram
     from .autodoc.structure import STRUCTURE_DIRECTIVES
     from .autodoc.uvm import UVM_DIRECTIVES
     from .config import register_config, validate_config
@@ -125,6 +125,7 @@ def setup(app: Any) -> dict[str, Any]:
     app.add_domain(SystemVerilogDomain)
     app.add_directive_to_domain("sv", "inheritance-diagram", SvInheritanceDiagram)
     app.add_directive_to_domain("sv", "instance-diagram", SvInstanceDiagram)
+    app.add_directive_to_domain("sv", "block-diagram", SvBlockDiagram)
     for name, directive in STRUCTURE_DIRECTIVES.items():
         app.add_directive_to_domain("sv", name, directive)
     for name, directive in UVM_DIRECTIVES.items():

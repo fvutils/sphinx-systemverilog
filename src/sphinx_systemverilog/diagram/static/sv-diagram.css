@@ -50,5 +50,9 @@ html[data-theme="dark"] .svd, body[data-theme="dark"] .svd {
 .svd .e.k-handle path { stroke: var(--sv-handle); stroke-dasharray: 5 3; }
 .svd .e.k-handle .j, .svd .ah.k-handle { fill: var(--sv-handle); }
 .svd .e.cond path { stroke-dasharray: 2 2; }
+.svd .e.k-bus path { stroke-width: 2; }
 .svd .e.k-bundle path { stroke-width: 3; }
+.svd .e.k-intf path { stroke: var(--sv-tlm); stroke-width: 3; stroke-opacity: 0.8; }
+.svd .box rect.port.k-intf { fill: var(--sv-tlm); }
+.svd .box rect.port.k-nc { fill: none; stroke: var(--sv-stroke); stroke-dasharray: 2 1; }
 .svd .e:hover path { stroke-width: 2.4; }

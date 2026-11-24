@@ -235,3 +235,90 @@ def build_instance_dot(edges: dict, top: str, ports: Any = None) -> str:
         lines.append(f'  "{name}" [label="{name}"{attrs}];')
     lines.append("}")
     return "\n".join(lines)
+
+
+class SvBlockDiagram(Directive):
+    """``.. sv:block-diagram:: my_module`` -> its instances and the nets between them.
+
+    One level: the module's child instances as boxes, its own ports on the
+    border.  Laid out by ELK only; there is no Graphviz version, so LaTeX and
+    other non-HTML output get a one-line placeholder.
+    """
+
+    required_arguments = 1
+    optional_arguments = 0
+    final_argument_whitespace = False
+    has_content = False
+    option_spec = {
+        "connections": lambda arg: directives.choice(arg, ("auto", "nets", "bundled")),
+        "hide": directives.unchanged,
+        "order": directives.unchanged,
+    }
+
+    def _note(self, text: str, extra_class: str = "") -> nodes.paragraph:
+        para = nodes.paragraph(classes=["sv-structure-note"] + ([extra_class] if extra_class else []))
+        para += nodes.emphasis("", text)
+        return para
+
+    def _warn(self, env: Any, msg: str, *args: Any) -> list[nodes.Node]:
+        logger.warning("sphinx-systemverilog: " + msg, *args, type="systemverilog",
+                       location=(env.docname, self.lineno))
+        return []
+
+    def run(self) -> list[nodes.Node]:
+        import re
+
+        from ..diagram.sphinx import draw_node
+        from ..svdb.database import AmbiguousKey
+        from .rtl_diagram import DEFAULT_HIDE, build_block_diagram, collect
+
+        env = self.state.document.settings.env
+        name = self.arguments[0].strip()
+        db = getattr(getattr(env, "sv_index", None), "database", None)
+        if db is None:
+            return self._warn(env, "no SystemVerilog sources were parsed, so %r "
+                              "cannot be diagrammed; check sv_source_dirs", name)
+        try:
+            module = db.get(name)
+        except AmbiguousKey as e:
+            return self._warn(env, "block diagram: %s", e)
+        if module is None or module.kind not in ("module", "interface", "program"):
+            return self._warn(env, "block diagram: no module named %r", name)
+
+        hide = self.options.get("hide", DEFAULT_HIDE)
+        if hide.strip().lower() in ("", "none"):
+            hide = ""
+        try:
+            re.compile(hide)
+        except re.error as e:
+            return self._warn(env, "block diagram of %s: bad :hide: pattern %r (%s)",
+                              name, hide, e)
+        model = collect(db, module, hide=hide or None)
+        if not model.instances:
+            return self._warn(env, "block diagram: %s instantiates nothing", module.name)
+
+        order = [n.strip() for n in self.options.get("order", "").split(",") if n.strip()]
+        unknown = [n for n in order if n not in {i.name for i in model.instances}]
+        if unknown:
+            self._warn(env, "block diagram of %s: :order: names no instance %s",
+                       module.name, ", ".join(unknown))
+        diagram = build_block_diagram(model, self.options.get("connections", "auto"), order)
+
+        alt = f"Block diagram of {module.name}"
+        placeholder = nodes.paragraph("", f"[{alt}]")
+        drawn, why_not = draw_node(env, diagram, [placeholder], alt,
+                                   (env.docname, self.lineno), graphviz=False)
+        out = list(drawn)
+        if why_not:
+            out.append(self._note(f"The block diagram needs ELK: {why_not}."))
+        if model.hidden:
+            out.append(self._note(
+                "Not drawn: " + ", ".join(model.hidden) + " (clocks and resets, "
+                "which reach every block; set :hide: to change this)."))
+        if model.undriven:
+            out.append(self._note(
+                f"{len(model.undriven)} net(s) are driven by logic inside "
+                f"{module.name} (an assign or a process), which this diagram "
+                "doesn't show, so their readers have an unconnected input: "
+                + ", ".join(model.undriven) + ".", extra_class="sv-uvm-unresolved"))
+        return out

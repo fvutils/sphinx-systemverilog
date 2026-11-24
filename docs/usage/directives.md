@@ -100,6 +100,7 @@ documented in full under [Design structure](structure.md):
 | `sv:used-by` | Every site that instantiates a module, with parameters and source links. |
 | `sv:parameter-matrix` | The parameter values a module is actually elaborated at. |
 | `sv:instance-diagram` | A module-to-module Graphviz graph. |
+| `sv:block-diagram` | One module's instances and the nets between them ([Block diagrams](block-diagrams)). |
 | `sv:inheritance-diagram` | A class hierarchy graph. |
 
 ```rst

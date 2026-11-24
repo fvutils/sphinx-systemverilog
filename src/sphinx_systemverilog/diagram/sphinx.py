@@ -14,7 +14,9 @@ missing from a source checkout) the directive gets only the Graphviz node.
 from __future__ import annotations
 
 import hashlib
+import html
 import os
+import re
 from typing import Any
 
 from docutils import nodes
@@ -29,6 +31,13 @@ logger = logging.getLogger(__name__)
 
 CSS = "sv-diagram.css"
 
+#: ``href`` prefix for a box that links to a documented SystemVerilog object:
+#: ``svref:my_pkg::my_agent``.  Resolved through the ``sv`` domain when the
+#: page is written; a box whose target isn't documented loses its link.
+XREF = "svref:"
+
+_XREF_RE = re.compile(r'<a href="svref:([^"]*)">(.*?)</a>', re.S)
+
 _warned_unavailable = False
 
 
@@ -40,9 +49,48 @@ def _visit_html(self: Any, node: sv_diagram) -> None:
     alt = node.get("alt", "")
     self.body.append(f'<div class="sv-diagram" title="{self.attval(alt)}">'
                      if alt else '<div class="sv-diagram">')
-    self.body.append(node["svg"])
+    self.body.append(_resolve_links(self.builder, node["svg"]))
     self.body.append("</div>\n")
     raise nodes.SkipNode
+
+
+def _resolve_links(builder: Any, svg: str) -> str:
+    """Replace ``svref:`` hrefs with relative URLs, or drop the link."""
+    if XREF not in svg:
+        return svg
+    domain = builder.env.get_domain("sv")
+    here = builder.current_docname
+
+    def sub(m: re.Match) -> str:
+        target = html.unescape(m.group(1)).split("#", 1)[0].strip()
+        found = _find_type(domain, target) if target else None
+        if found is None:
+            return m.group(2)
+        docname, anchor, _kind = found
+        uri = builder.get_relative_uri(here, docname) + "#" + anchor
+        return f'<a href="{html.escape(uri)}">{m.group(2)}</a>'
+
+    return _XREF_RE.sub(sub, svg)
+
+
+#: What a box can link to: a box is always an instance of one of these.
+_BOX_KINDS = ("class", "module", "interface", "program")
+
+
+def _find_type(domain: Any, target: str) -> tuple | None:
+    """``(docname, anchor, kind)`` of the type *target* names, or None.
+
+    Like the domain's own lookup (exact name, then a unique ``::`` suffix),
+    but only over types: a module ``decode`` must not resolve to a method
+    ``uvm_reg_cbs::decode``.
+    """
+    hit = domain.objects.get(target)
+    if hit is not None and hit[2] in _BOX_KINDS:
+        return hit
+    hits = [fn for fn in domain.candidates(target)
+            if (fn == target or fn.endswith("::" + target))
+            and domain.objects[fn][2] in _BOX_KINDS]
+    return domain.objects[hits[0]] if len(hits) == 1 else None
 
 
 def _visit_other(self: Any, node: sv_diagram) -> None:
@@ -54,15 +102,20 @@ def _depart_other(self: Any, node: sv_diagram) -> None:
 
 
 def draw_node(env: Any, diagram: Diagram, fallback: list[nodes.Node],
-              alt: str, location: Any) -> tuple[list[nodes.Node], str]:
+              alt: str, location: Any, *, graphviz: bool = True,
+              ) -> tuple[list[nodes.Node], str]:
     """Lay out and render *diagram*; return ``(nodes, why_not)``.
 
     On success the nodes are one :class:`sv_diagram` wrapping *fallback* and
     *why_not* is empty.  Otherwise the nodes are *fallback* itself and
     *why_not* says why ELK wasn't used, for a note under the diagram.
+
+    ``graphviz=False`` is for a diagram with no Graphviz drawing (the RTL
+    block diagram): *fallback* is then only a placeholder, so
+    ``sv_diagram_layout = "graphviz"`` doesn't apply to it.
     """
     global _warned_unavailable
-    if env.config.sv_diagram_layout == "graphviz":
+    if graphviz and env.config.sv_diagram_layout == "graphviz":
         return fallback, ""
     engine = get_engine()
     if engine is None:

@@ -197,7 +197,7 @@ def test_documented_directives_exist():
     known |= {"sv:" + n for n in STRUCTURE_DIRECTIVES}
     known |= {"sv:" + n for n in UVM_DIRECTIVES}
     known |= {"sv:" + n for n in OBJECT_TYPES}
-    known |= {"sv:inheritance-diagram", "sv:instance-diagram"}
+    known |= {"sv:inheritance-diagram", "sv:instance-diagram", "sv:block-diagram"}
 
     for path in _skill_files():
         text = open(path, encoding="utf-8").read()

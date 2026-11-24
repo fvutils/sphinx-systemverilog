@@ -1,5 +1,6 @@
 """The neutral Diagram model, its ELK JSON, and the elkjs layout engines."""
 import os
+import re
 import shutil
 
 import pytest
@@ -62,7 +63,9 @@ def test_root_is_wrapped():
 
 def test_hyperedge_splits_per_target_and_bundle_keeps_members():
     g = to_elk(_env())
-    edges = {e["id"]: e for e in g["edges"]}
+    # one level: the edges are laid out inside the root box
+    assert not g["edges"]
+    edges = {e["id"]: e for e in g["children"][0]["edges"]}
     assert set(edges) == {"e0.0", "e0.1", "b0"}
     assert edges["e0.0"]["targets"] == ["sb.act"] and edges["e0.1"]["targets"] == ["cov.i"]
     # the label is drawn once, on the first branch
@@ -193,10 +196,104 @@ def test_render_draws_every_element():
     assert '<a href="mon.html">' in svg and 'class="box leaf cond"' in svg
     # one arrowhead per kind with an arrow, ids prefixed per diagram
     assert 'id="p1-ah-analysis"' in svg and 'marker-end="url(#p1-ah-analysis)"' in svg
-    assert "p1-ah-bundle" not in svg, "bundles have no arrowhead"
+    assert 'marker-end="url(#p1-ah-bundle)"' in svg, "a bundle is directed too"
     assert ">txn</text>" in svg and 'class="t-port"' in svg
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
 def test_node_renders_the_same_svg():
     assert _svg(get_engine("node")) == _svg()
+
+
+def test_render_links_the_box_face():
+    svg = _svg()
+    link = re.search(r'<a href="mon.html">(.*?)</a>', svg).group(1)
+    assert link.startswith("<rect") and ">mon</text>" in link and ">my_mon</text>" in link
+    assert 'class="port' not in link, "ports stay outside the link"
+
+
+def _on(pt, d):
+    pts = [tuple(map(float, p.split(","))) for p in d.split(" L")]
+    x, y = pt
+    return any(min(a[0], b[0]) <= x <= max(a[0], b[0]) and
+               min(a[1], b[1]) <= y <= max(a[1], b[1]) for a, b in zip(pts, pts[1:]))
+
+
+def test_render_marks_where_a_fan_out_splits():
+    svg = _svg()
+    edges = "".join(re.findall(r'<g class="e .*?</g>', svg))
+    paths = re.findall(r'<path d="M([^"]+)"', edges)
+    dots = [tuple(map(float, d)) for d in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)"', svg)]
+    fan = "".join(re.findall(r'<g class="e k-analysis">.*?</g>', svg))
+    assert 'class="j"' in fan, "the fan-out has a dot"
+    assert len(dots) == len(set(dots)), "one dot per point, not one per branch"
+    for dot in dots:
+        assert sum(_on(dot, d) for d in paths) >= 2, f"{dot} is where paths meet"
+
+
+def test_container_port_labels_sit_just_above_the_port():
+    root = Box("env", "env", ports=[Port("env.in", "in", "WEST", "analysis")],
+               children=[Box("sb", "sb", ports=[Port("sb.i", "i", "WEST")])])
+    d = Diagram(root, edges=[Edge("env.in", ["sb.i"], "analysis")])
+    svg = get_engine().render(layout(to_elk(d)), {})
+    port = re.search(r'<rect x="([\d.]+)" y="([\d.]+)" width="8" height="8" class="port', svg)
+    label = re.search(r'<text x="([\d.]+)" y="([\d.]+)" text-anchor="start" class="t-port">in<', svg)
+    px, py = float(port.group(1)), float(port.group(2))
+    lx, ly = float(label.group(1)), float(label.group(2))
+    assert lx == px + 2
+    assert ly == py - 1, "just above the port, clear of the wire inside"
+
+
+def test_svref_links_resolve_through_the_domain_or_drop():
+    from sphinx_systemverilog.diagram.sphinx import _resolve_links
+
+    class Domain:
+        objects = {"p::agt": ("api/agt", "sv-p-agt", "class"),
+                   "uvm_pkg::uvm_reg_cbs::decode": ("uvm", "sv-decode", "function")}
+
+        def candidates(self, target):
+            return [fn for fn in self.objects if fn.rsplit("::", 1)[-1] == target]
+
+    class Builder:
+        current_docname = "guide/env"
+        env = type("Env", (), {"get_domain": lambda self, name: Domain()})()
+
+        def get_relative_uri(self, here, there):
+            return "../" + there + ".html"
+
+    svg = ('<g><a href="svref:agt #(item)"><rect/></a></g>'
+           '<g><a href="svref:uvm_driver"><rect/><text>d</text></a></g>'
+           '<g><a href="svref:decode"><rect/></a></g>')
+    assert _resolve_links(Builder(), svg) == (
+        '<g><a href="../api/agt.html#sv-p-agt"><rect/></a></g>'
+        '<g><rect/><text>d</text></g>'
+        '<g><rect/></g>'), "a box links to a type, never to a method of that name"
+
+
+def test_one_level_diagram_is_laid_out_as_the_root_box_graph():
+    flat = to_elk(_env(), )
+    mod = flat["children"][0]
+    assert flat["layoutOptions"]["elk.hierarchyHandling"] == "SEPARATE_CHILDREN"
+    assert mod["layoutOptions"]["elk.direction"] == "RIGHT"
+    assert "elk.json.edgeCoords" not in mod["layoutOptions"]
+
+    nested = _env()
+    nested.root.children[0].children.append(Box("inner", "inner"))
+    g = to_elk(nested)
+    assert g["layoutOptions"]["elk.hierarchyHandling"] == "INCLUDE_CHILDREN"
+    assert g["edges"] and not g["children"][0].get("edges")
+
+
+def test_order_reaches_cycle_breaking_in_a_one_level_diagram():
+    # a -> b -> c -> a: only the model order says where to break the cycle
+    def ring(order):
+        boxes = {n: Box(n, n, ports=[Port(f"{n}.i", "i", "WEST"), Port(f"{n}.o", "o", "EAST")])
+                 for n in "abc"}
+        d = Diagram(Box("top", "top", children=[boxes[n] for n in order]),
+                    edges=[Edge("a.o", ["b.i"]), Edge("b.o", ["c.i"]), Edge("c.o", ["a.i"])],
+                    model_order=True)
+        laid = layout(to_elk(d))
+        return [c["id"] for c in sorted(laid["children"][0]["children"], key=lambda c: c["x"])]
+
+    assert ring("abc") == ["a", "b", "c"]
+    assert ring("cab") == ["c", "a", "b"]
