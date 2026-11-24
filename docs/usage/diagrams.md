@@ -126,6 +126,11 @@ What the diagram can't show, it says under the picture:
   (`logic [31:0]`). A range over a parameter is not evaluated, so a bus with
   one leaves the bit count out of its label.
 
+In HTML the diagram is interactive (see [below](diagram-interaction)), and in
+a bundled diagram a bus opens up: double-click it to draw its signals
+individually, each between its own ports, and double-click one of them to
+fold the bus back.
+
 The block diagram is laid out by ELK only, like the HTML schematic below.
 There is no Graphviz version: `sv_diagram_layout = "graphviz"` doesn't apply
 to it, and LaTeX and other non-HTML output show a one-line placeholder. See
@@ -166,6 +171,26 @@ missing (a source checkout where `ivpm update` hasn't been run).
 
 Layouts are cached in the build's doctree directory, keyed by the diagram's
 content, so an unchanged schematic is not laid out again.
+
+(diagram-interaction)=
+### In the browser
+
+Both the block diagram and the HTML schematic respond to the reader:
+
+| Action | Effect |
+|---|---|
+| Click a wire or a port | Highlight its net end to end and fade the rest. Shift-click adds to the highlight; click the background, or press Escape, to clear it. |
+| Double-click a bus (bundled block diagram) | Expand it into its signals; double-click a signal to fold it back. **Collapse** folds them all. |
+| Toolbar (top right, on hover), or ctrl+wheel | Zoom in, zoom out, fit the frame, or actual size. |
+| Drag the background | Pan. Large diagrams scroll inside a frame at most 80% of the window high. |
+
+Without JavaScript the picture is the same static SVG. Expanding a bus lays
+the diagram out again in the page, with the same elkjs and renderer the build
+used, so the result looks like any other drawing. Only a diagram with buses
+carries what that needs: its unlaid layout graph, embedded in the page (about
+240 KiB for CVA6's `cva6_pipeline`). elkjs itself (1.6 MB, copied into
+`_static` as `sv-diagram-elk.js`) is loaded the first time a reader expands
+a bus, not with the page.
 
 ### Why the Graphviz layout is the way it is
 

@@ -353,9 +353,21 @@ def build_block_diagram(
                 edges.append(Edge(src, [tgt], "net" if (n.width or 1) == 1 else "bus",
                                   priority=_priority(n.width), title=n.name))
                 continue
+            # What expanding the bundle draws: each net between its own ports.
+            members, mports = [], {}
+            for n in nets:
+                ends = [n.drivers[0]] + [e for e in n.loads if e.owner == dst]
+                for e in ends:
+                    i = pid(e.owner, e.port)
+                    mports.setdefault(i, (e.owner, Port(
+                        i, e.port, side(e, e.owner == ROOT), e.dir, title=port_title(e))))
+                members.append(Edge(
+                    pid(ends[0].owner, ends[0].port),
+                    [pid(e.owner, e.port) for e in ends[1:]],
+                    "net" if (n.width or 1) == 1 else "bus", priority=_priority(n.width),
+                    title=n.name + (f" [{n.width}]" if n.width and n.width > 1 else "")))
             bundles.append(Bundle(
-                src, [tgt],
-                members=[Edge(src, [tgt], title=n.name) for n in nets],
+                src, [tgt], members=members, ports=list(mports.values()),
                 priority=_priority(total),
                 title=f"{len(nets)} signals" + (f", {total} bits" if total else "")
                 + ": " + ", ".join(n.name for n in nets)))

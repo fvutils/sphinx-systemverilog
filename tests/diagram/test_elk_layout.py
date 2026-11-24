@@ -61,16 +61,20 @@ def test_root_is_wrapped():
     assert "elk.layered.cycleBreaking.strategy" not in g["layoutOptions"]
 
 
-def test_hyperedge_splits_per_target_and_bundle_keeps_members():
+def test_hyperedge_splits_per_target_and_bundle_carries_its_expansion():
     g = to_elk(_env())
     # one level: the edges are laid out inside the root box
     assert not g["edges"]
     edges = {e["id"]: e for e in g["children"][0]["edges"]}
     assert set(edges) == {"e0.0", "e0.1", "b0"}
+    assert edges["b0"]["bundle"] == "b0" and "group" not in edges["b0"]
     assert edges["e0.0"]["targets"] == ["sb.act"] and edges["e0.1"]["targets"] == ["cov.i"]
     # the label is drawn once, on the first branch
     assert edges["e0.0"]["labels"][0]["text"] == "txn" and "labels" not in edges["e0.1"]
-    assert [m["label"] for m in edges["b0"]["members"]] == ["a", "b"]
+    # the members are not laid out, but kept for the browser to expand
+    members = g["expand"]["b0"]["edges"]
+    assert [(m["id"], m["member"]) for m in members] == [("b0m0", "b0"), ("b0m1", "b0")]
+    assert [m["labels"][0]["text"] for m in members] == ["a", "b"]
 
 
 def test_model_order_and_option_override():
@@ -224,7 +228,7 @@ def test_render_marks_where_a_fan_out_splits():
     edges = "".join(re.findall(r'<g class="e .*?</g>', svg))
     paths = re.findall(r'<path d="M([^"]+)"', edges)
     dots = [tuple(map(float, d)) for d in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)"', svg)]
-    fan = "".join(re.findall(r'<g class="e k-analysis">.*?</g>', svg))
+    fan = "".join(re.findall(r'<g class="e k-analysis"[^>]*>.*?</g>', svg))
     assert 'class="j"' in fan, "the fan-out has a dot"
     assert len(dots) == len(set(dots)), "one dot per point, not one per branch"
     for dot in dots:

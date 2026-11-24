@@ -8,8 +8,12 @@
 //
 // Custom properties read from the graph (see elk.py): a node's cls, href and
 // title; a port's kind and title; an edge's kind, conditional, title and
-// group (the hyperedge it was split from); a label's style (name, sub, port,
-// edge).
+// group (the hyperedge it was split from), bundle and member (see to_elk); a
+// label's style (name, sub, port, edge).
+//
+// Boxes, ports and edges carry data-* attributes (data-box, data-port; an
+// edge's data-net, data-ends, data-bundle, data-member) for sv-diagram.js,
+// which highlights a net and expands a bundle in the browser.
 (function (root) {
   "use strict";
 
@@ -59,14 +63,14 @@
       const isCont = !!(n.children && n.children.length);
       const cls = n.cls || (isCont ? "cont" : "leaf");
       const tip = n.title || (n.labels || []).map(l => l.text).join(" : ");
-      let s = `<g class="box ${esc(cls)}">`;
+      let s = `<g class="box ${esc(cls)}" data-box="${esc(n.id)}">`;
       // The link covers the box and its title, not the ports.
       let face = `<rect x="${num(n.x)}" y="${num(n.y)}" width="${num(n.width)}" height="${num(n.height)}" rx="${isCont ? 6 : 3}"><title>${esc(tip)}</title></rect>`;
       for (const l of n.labels || []) face += text(l, "middle", l.x + l.width / 2);
       s += n.href ? `<a href="${esc(n.href)}">${face}</a>` : face;
       for (const p of n.ports || []) {
         const ptip = p.title ? `<title>${esc(p.title)}</title>` : "";
-        s += `<rect x="${num(p.x)}" y="${num(p.y)}" width="${p.width}" height="${p.height}" class="port k-${kindClass(p.kind)}">${ptip}</rect>`;
+        s += `<rect x="${num(p.x)}" y="${num(p.y)}" width="${p.width}" height="${p.height}" class="port k-${kindClass(p.kind)}" data-port="${esc(p.id)}">${ptip}</rect>`;
         for (const l of p.labels || []) {
           // Port labels sit inside the box: left-aligned on the west side,
           // right-aligned on the east.
@@ -143,7 +147,11 @@
         const arrow = PLAIN[k] ? "" : ` marker-end="url(#${pre}-ah-${k})"`;
         const cls = `e k-${k}${e.conditional ? " cond" : ""}`;
         const tip = e.title ? `<title>${esc(e.title)}</title>` : "";
-        out.push(`<g class="${cls}">`);
+        const ends = [...(e.sources || []), ...(e.targets || [])].join(" ");
+        let data = ` data-net="${esc(e.group || e.id)}" data-ends="${esc(ends)}"`;
+        if (e.bundle) data += ` data-bundle="${esc(e.bundle)}"`;
+        if (e.member) data += ` data-member="${esc(e.member)}"`;
+        out.push(`<g class="${cls}"${data}>`);
         for (const sec of e.sections || []) {
           const pts = [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint];
           const d = "M" + pts.map(p => `${num(p.x)},${num(p.y)}`).join(" L");

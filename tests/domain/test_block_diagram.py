@@ -93,7 +93,16 @@ def test_bundled_mode_merges_the_nets_between_two_blocks(model):
     d.validate()
     by_src = {(b.source, tuple(b.targets)): b for b in d.bundles}
     b = by_src[("u_fetch:@out", ("u_decode:@from:u_fetch",))]
-    assert [m.title for m in b.members] == ["instr", "instr_valid", "pc"]
+    assert [m.title for m in b.members] == ["instr [32]", "instr_valid", "pc [32]"]
+    # each member runs between the nets' own ports, which expanding adds
+    assert [(m.source, m.targets) for m in b.members] == [
+        ("u_fetch:instr", ["u_decode:instr"]),
+        ("u_fetch:instr_valid", ["u_decode:instr_valid"]),
+        ("u_fetch:pc", ["u_decode:pc"])]
+    assert {(o, p.id, p.side) for o, p in b.ports} == {
+        ("u_fetch", "u_fetch:instr", "EAST"), ("u_fetch", "u_fetch:instr_valid", "EAST"),
+        ("u_fetch", "u_fetch:pc", "EAST"), ("u_decode", "u_decode:instr", "WEST"),
+        ("u_decode", "u_decode:instr_valid", "WEST"), ("u_decode", "u_decode:pc", "WEST")}
     labels = {p.id: p.label for p in _box(d, "u_decode").ports}
     assert labels["u_decode:@from:u_fetch"] == "u_fetch (3, 65b)"
     # one net is an ordinary edge, labelled with the net

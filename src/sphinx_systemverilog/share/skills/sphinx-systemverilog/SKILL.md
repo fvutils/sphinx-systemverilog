@@ -49,7 +49,8 @@ Checklist, in order:
 4. **Install Graphviz** (`dot` on `PATH`) only if you want diagrams. Without
    it, builds still pass; diagrams are skipped with a warning. The exception
    is `sv:uvm-schematic` in HTML and `sv:block-diagram`, which are laid out
-   by the bundled elkjs.
+   by the bundled elkjs and are interactive in the page (highlight a net,
+   zoom, double-click a bus to expand it); nothing needs configuring.
 
 Full list of the 28 `sv_*` values: `references/config.md`.
 

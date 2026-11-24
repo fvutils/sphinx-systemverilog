@@ -8,6 +8,11 @@ SVG, with the Graphviz rendering of the same diagram as its child:
 * every other builder (LaTeX, text, man, ...) ignores the SVG and renders the
   child, so PDF output keeps today's Graphviz diagrams.
 
+In HTML, ``sv-diagram.js`` makes the SVG interactive (highlight a net, pan
+and zoom).  A diagram with bundles also embeds its unlaid ELK graph, so the
+script can expand a bundle and lay the diagram out again in the browser,
+with the same elkjs and ``render.js`` the build used.
+
 When no layout engine can run (``sv_diagram_layout = "graphviz"``, or elkjs
 missing from a source checkout) the directive gets only the Graphviz node.
 """
@@ -15,21 +20,29 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import os
 import re
+import shutil
+from importlib import resources
 from typing import Any
 
 from docutils import nodes
 from sphinx.util import logging
-from sphinx.util.fileutil import copy_asset_file
 
 from .elk import to_elk
-from .engine import LayoutError, get_engine, layout, static_file, unavailable_reason
+from .engine import (LayoutError, elk_file, get_engine, layout, static_file,
+                     unavailable_reason)
 from .model import Diagram
 
 logger = logging.getLogger(__name__)
 
 CSS = "sv-diagram.css"
+
+#: Files copied into ``_static``: (name there, file in ``diagram/static``).
+#: elkjs is loaded only when a reader expands a bundle.
+SCRIPTS = (("sv-diagram-render.js", "render.js"), ("sv-diagram.js", "sv-diagram.js"))
+ELK_STATIC = "sv-diagram-elk.js"
 
 #: ``href`` prefix for a box that links to a documented SystemVerilog object:
 #: ``svref:my_pkg::my_agent``.  Resolved through the ``sv`` domain when the
@@ -47,9 +60,16 @@ class sv_diagram(nodes.General, nodes.Element):
 
 def _visit_html(self: Any, node: sv_diagram) -> None:
     alt = node.get("alt", "")
-    self.body.append(f'<div class="sv-diagram" title="{self.attval(alt)}">'
-                     if alt else '<div class="sv-diagram">')
+    attrs = f' data-prefix="{self.attval(node.get("prefix", "svd"))}"'
+    if alt:
+        attrs += f' title="{self.attval(alt)}"'
+    self.body.append(f'<div class="sv-diagram"{attrs}>')
     self.body.append(_resolve_links(self.builder, node["svg"]))
+    if node.get("graph"):
+        data = json.dumps(_resolve_graph_links(self.builder, node["graph"]),
+                          separators=(",", ":"))
+        self.body.append('<script type="application/json" class="svd-graph">'
+                         + data.replace("</", "<\\/") + "</script>")
     self.body.append("</div>\n")
     raise nodes.SkipNode
 
@@ -58,19 +78,36 @@ def _resolve_links(builder: Any, svg: str) -> str:
     """Replace ``svref:`` hrefs with relative URLs, or drop the link."""
     if XREF not in svg:
         return svg
-    domain = builder.env.get_domain("sv")
-    here = builder.current_docname
 
     def sub(m: re.Match) -> str:
-        target = html.unescape(m.group(1)).split("#", 1)[0].strip()
-        found = _find_type(domain, target) if target else None
-        if found is None:
+        uri = _xref_uri(builder, XREF + html.unescape(m.group(1)))
+        if not uri:
             return m.group(2)
-        docname, anchor, _kind = found
-        uri = builder.get_relative_uri(here, docname) + "#" + anchor
         return f'<a href="{html.escape(uri)}">{m.group(2)}</a>'
 
     return _XREF_RE.sub(sub, svg)
+
+
+def _xref_uri(builder: Any, href: str) -> str:
+    """The relative URL an ``svref:`` *href* points at, or ``""``."""
+    target = href[len(XREF):].split("#", 1)[0].strip()
+    found = _find_type(builder.env.get_domain("sv"), target) if target else None
+    if found is None:
+        return ""
+    docname, anchor, _kind = found
+    return builder.get_relative_uri(builder.current_docname, docname) + "#" + anchor
+
+
+def _resolve_graph_links(builder: Any, graph: dict) -> dict:
+    """A copy of the ELK *graph* with its ``svref:`` hrefs resolved."""
+    def walk(o: Any) -> Any:
+        if isinstance(o, dict):
+            return {k: (_xref_uri(builder, v) if k == "href" and isinstance(v, str)
+                        and v.startswith(XREF) else walk(v)) for k, v in o.items()}
+        if isinstance(o, list):
+            return [walk(v) for v in o]
+        return o
+    return walk(graph)
 
 
 #: What a box can link to: a box is always an instance of one of these.
@@ -137,19 +174,34 @@ def draw_node(env: Any, diagram: Diagram, fallback: list[nodes.Node],
                        "Graphviz instead: %s", alt, e, type="systemverilog",
                        subtype="diagram", location=location)
         return fallback, f"the ELK layout failed ({e})"
-    node = sv_diagram(svg=svg, alt=alt)
+    node = sv_diagram(svg=svg, alt=alt, prefix=prefix)
+    if "expand" in graph:
+        node["graph"] = graph
     node.extend(fallback)
     return [node], ""
 
 
-def _copy_css(app: Any, exc: Exception | None) -> None:
-    if exc is None and app.builder.format == "html":
-        with _as_path(CSS) as src:
-            copy_asset_file(src, os.path.join(app.outdir, "_static"))
+def _copy_static(app: Any, exc: Exception | None) -> None:
+    if exc is not None or app.builder.format != "html":
+        return
+    static = os.path.join(app.outdir, "_static")
+    os.makedirs(static, exist_ok=True)
+    # Always overwritten: a rebuild after an upgrade must not keep the old
+    # copies (copy_asset_file refuses to, with a warning that fails -W).
+    for name, source in ((CSS, CSS), *SCRIPTS):
+        with _as_path(source) as src:
+            shutil.copyfile(src, os.path.join(static, name))
+    elk = elk_file()
+    if elk is not None:
+        with resources.as_file(elk) as src:
+            shutil.copyfile(src, os.path.join(static, ELK_STATIC))
+        lic = elk.parent.joinpath("LICENSE.md")
+        if lic.is_file():
+            with resources.as_file(lic) as src:
+                shutil.copyfile(src, os.path.join(static, "sv-diagram-elk.LICENSE.md"))
 
 
 def _as_path(name: str) -> Any:
-    from importlib import resources
     return resources.as_file(static_file(name))
 
 
@@ -159,4 +211,6 @@ def setup(app: Any) -> None:
     app.add_node(sv_diagram, html=(_visit_html, None), latex=pair, text=pair,
                  man=pair, texinfo=pair)
     app.add_css_file(CSS)
-    app.connect("build-finished", _copy_css)
+    for name, _source in SCRIPTS:
+        app.add_js_file(name, loading_method="defer")
+    app.connect("build-finished", _copy_static)

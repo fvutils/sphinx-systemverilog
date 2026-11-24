@@ -82,12 +82,15 @@ class Bundle:
 
     It is drawn from *source* to *targets*, usually bundle ports added for the
     purpose.  *members* keeps the connections it stands for, so a reader can
-    expand or highlight them; they are not drawn.
+    expand it in the browser; they are not drawn.  *ports* are the
+    ``(box id, Port)`` pairs the members end on that the diagram itself
+    doesn't have; expanding the bundle adds them to their boxes.
     """
 
     source: str
     targets: list[str]
     members: list[Edge] = field(default_factory=list)
+    ports: list[tuple[str, Port]] = field(default_factory=list)
     label: str = ""
     kind: str = "bundle"
     priority: int = 0
@@ -131,9 +134,24 @@ class Diagram:
                 claim(p.id, f"port of {b.id!r}")
                 if p.side not in SIDES:
                     raise ValueError(f"port {p.id!r}: side {p.side!r} is not one of {SIDES}")
-        for e in [*self.edges, *self.bundles]:
+        boxes = {b.id for b in self.boxes()}
+
+        def check(e: Edge | Bundle, known: set[str]) -> None:
             if not e.targets:
                 raise ValueError(f"edge from {e.source!r} has no targets")
             for end in (e.source, *e.targets):
-                if end not in ids:
+                if end not in known:
                     raise ValueError(f"edge end {end!r} is not a box or port in the diagram")
+
+        for e in [*self.edges, *self.bundles]:
+            check(e, ids)
+        for b in self.bundles:
+            extra = set()
+            for owner, p in b.ports:
+                if owner not in boxes:
+                    raise ValueError(f"bundle port {p.id!r}: no box {owner!r}")
+                if p.side not in SIDES:
+                    raise ValueError(f"port {p.id!r}: side {p.side!r} is not one of {SIDES}")
+                extra.add(p.id)
+            for m in b.members:
+                check(m, ids | extra)

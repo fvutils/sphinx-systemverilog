@@ -144,3 +144,8 @@ picks; here it is asked for explicitly:
 `:order:` lists the blocks in the order the data flows through them. Feedback
 paths make a pipeline cyclic, and the layout breaks those cycles in that order,
 so the main path reads left to right.
+
+Both pictures respond to the mouse. Click a wire or a port to follow its net,
+and double-click the `u_fetch (3, 65b)` bus to open it into `instr`,
+`instr_valid` and `pc`, each between its own ports; double-click one of those to
+close it again. See [In the browser](diagram-interaction) for the rest.

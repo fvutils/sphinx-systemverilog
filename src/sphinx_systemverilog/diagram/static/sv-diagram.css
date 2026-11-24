@@ -55,4 +55,27 @@ html[data-theme="dark"] .svd, body[data-theme="dark"] .svd {
 .svd .e.k-intf path { stroke: var(--sv-tlm); stroke-width: 3; stroke-opacity: 0.8; }
 .svd .box rect.port.k-intf { fill: var(--sv-tlm); }
 .svd .box rect.port.k-nc { fill: none; stroke: var(--sv-stroke); stroke-dasharray: 2 1; }
-.svd .e:hover path { stroke-width: 2.4; }
+.svd .e:hover path:not(.hit) { stroke-width: 2.4; }
+
+/* The interactive layer (sv-diagram.js). */
+div.sv-diagram.svd-live { position: relative; overflow: visible; }
+div.sv-diagram .svd-view { overflow: auto; max-height: 80vh; }
+div.sv-diagram .svd-view.panning { cursor: grabbing; user-select: none; }
+div.sv-diagram.svd-busy svg { opacity: 0.5; cursor: progress; }
+.svd-tools {
+  position: absolute; top: 4px; right: 4px; z-index: 1; display: flex; gap: 2px;
+  opacity: 0; transition: opacity 0.15s;
+}
+div.sv-diagram:hover .svd-tools, .svd-tools:focus-within { opacity: 1; }
+.svd-tools button {
+  font: 12px/1 sans-serif; min-width: 24px; height: 22px; padding: 0 6px;
+  color: inherit; background: rgba(128, 128, 128, 0.18);
+  border: 1px solid rgba(128, 128, 128, 0.5); border-radius: 3px; cursor: pointer;
+}
+.svd-tools button:hover { background: rgba(128, 128, 128, 0.32); }
+.svd-live .svd .e { cursor: pointer; }
+.svd .e path.hit { stroke: transparent; stroke-width: 9; stroke-dasharray: none; }
+.svd.focus .e:not(.hl) { opacity: 0.12; }
+.svd.focus rect.port:not(.hl) { opacity: 0.35; }
+.svd .e.hl path:not(.hit) { stroke-width: 2.8; }
+.svd .box rect.port.hl { fill: var(--sv-fg); }

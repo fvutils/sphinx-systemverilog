@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .model import Box, Diagram
+from .model import Box, Diagram, Port
 
 #: Root id wrapped around the diagram's root box.  ELK can't attach edges to
 #: the graph root's own ports, so the diagram root is never the ELK root.
@@ -64,14 +64,7 @@ def _node(b: Box) -> dict:
         "labels": [_label(b.label, "name")] + ([_label(b.sub, "sub")] if b.sub else []),
         "ports": [], "children": [],
     }
-    for i, p in enumerate(b.ports):
-        n["ports"].append({
-            "id": p.id, "width": 8, "height": 8, "kind": p.kind,
-            "href": p.href, "title": p.title,
-            "labels": [_label(p.label, "port")] if p.label else [],
-            "layoutOptions": {"elk.port.side": p.side, "elk.port.index": str(i),
-                              "elk.port.borderOffset": "-4"},
-        })
+    n["ports"] = [_port(p, i) for i, p in enumerate(b.ports)]
     opts = {
         "elk.portConstraints": "FIXED_ORDER",
         "elk.nodeSize.constraints": "[PORTS, PORT_LABELS, NODE_LABELS, MINIMUM_SIZE]",
@@ -94,6 +87,16 @@ def _node(b: Box) -> dict:
         if all(p.side in ("WEST", "EAST") for p in b.ports):
             _size_leaf(b, n)
     return n
+
+
+def _port(p: Port, i: int) -> dict:
+    return {
+        "id": p.id, "width": 8, "height": 8, "kind": p.kind,
+        "href": p.href, "title": p.title,
+        "labels": [_label(p.label, "port")] if p.label else [],
+        "layoutOptions": {"elk.port.side": p.side, "elk.port.index": str(i),
+                          "elk.port.borderOffset": "-4"},
+    }
 
 
 def _size_leaf(b: Box, n: dict) -> None:
@@ -122,8 +125,11 @@ def to_elk(d: Diagram, options: dict[str, str] | None = None) -> dict:
 
     A hyperedge becomes one ELK edge per target (``e3.0``, ``e3.1``, ...);
     ``mergeEdges`` draws them as one trunk that fans out, and ``group``
-    tells the renderer which edges to put junction dots on.  A bundle's edge
-    carries its members, unlaid, under ``members``.
+    tells the renderer which edges to put junction dots on.  A bundle's edges
+    carry ``bundle`` (its id, ``b3``), and the graph root carries, under
+    ``expand``, what expanding each bundle adds: the ports its members end
+    on and their edges, tagged ``member``.  ELK ignores both; the browser
+    script (``sv-diagram.js``) uses them to expand a bundle and lay out again.
     """
     d.validate()
     root = {"id": ROOT_ID, "labels": [], "children": [_node(d.root)], "edges": []}
@@ -134,7 +140,8 @@ def to_elk(d: Diagram, options: dict[str, str] | None = None) -> dict:
     opts.update(options or {})
     root["layoutOptions"] = opts
 
-    def add(eid: str, e: Any, extra: dict) -> None:
+    def add(eid: str, e: Any, extra: dict, into: list | None = None) -> None:
+        into = root["edges"] if into is None else into
         for k, t in enumerate(e.targets):
             ed: dict[str, Any] = {
                 "id": f"{eid}.{k}" if len(e.targets) > 1 else eid,
@@ -149,14 +156,23 @@ def to_elk(d: Diagram, options: dict[str, str] | None = None) -> dict:
                 ed["layoutOptions"] = {
                     "elk.layered.priority.direction": str(e.priority),
                     "elk.layered.priority.straightness": str(e.priority)}
-            root["edges"].append(ed)
+            into.append(ed)
 
     for i, e in enumerate(d.edges):
         add(f"e{i}", e, {"conditional": e.conditional})
+    expand = {}
     for i, b in enumerate(d.bundles):
-        add(f"b{i}", b, {"members": [
-            {"source": m.source, "targets": list(m.targets), "label": m.label, "kind": m.kind}
-            for m in b.members]})
+        bid = f"b{i}"
+        add(bid, b, {"bundle": bid})
+        members: list = []
+        for j, m in enumerate(b.members):
+            add(f"{bid}m{j}", m, {"member": bid, "conditional": m.conditional}, members)
+        expand[bid] = {
+            "ports": [{"box": owner, "port": _port(p, 0)} for owner, p in b.ports],
+            "edges": members,
+        }
+    if expand:
+        root["expand"] = expand
 
     # A one-level diagram (no box inside the root has children) is laid out
     # as the root box's own graph.  Under INCLUDE_CHILDREN, model-order cycle

@@ -56,9 +56,15 @@ def elk_version() -> str | None:
     return f.read_text().strip() if f.is_file() else None
 
 
-def elk_source() -> str | None:
+def elk_file() -> Any:
+    """The shipped ``elk.bundled.js``, or ``None`` when elkjs isn't there."""
     f = _js_file("elk.bundled.js")
-    return f.read_text(encoding="utf-8") if f.is_file() else None
+    return f if f.is_file() else None
+
+
+def elk_source() -> str | None:
+    f = elk_file()
+    return f.read_text(encoding="utf-8") if f is not None else None
 
 
 def static_file(name: str) -> Any:
